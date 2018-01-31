@@ -11,10 +11,10 @@ typedef struct MemoryPool_Fixed
 } MemoryPool_Fixed;
 
 
-void static_pool_init(int* owner, int dataSize, int initialElementCount);
-void* static_pool_get(int staticPool, int offset);
-int static_pool_alloc(int staticPool);
-void static_pool_free(int staticPool, int offset);
+void fixed_pool_init(MemoryPool_Fixed** owner, int element_size, int initial_element_count);
+void* fixed_pool_get(MemoryPool_Fixed* pool, int offset);
+int fixed_pool_alloc(MemoryPool_Fixed* pool);
+void fixed_pool_free(MemoryPool_Fixed* pool, int offset);
 
 
 

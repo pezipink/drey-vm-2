@@ -1,5 +1,5 @@
 #include <windows.h>
-
+#include "dynamic_pool.h"
 typedef struct FreeBlock
 {
   int size;
@@ -7,13 +7,6 @@ typedef struct FreeBlock
   void* data;
 } FreeBlock;
 
-typedef struct MemoryPool_Dynamic
-{
-  int owner;
-  int total_size;
-  int free_offset;
-  void* data;
-} MemoryPool_Dynamic;
 
 typedef struct AllocatedBlock
 {
@@ -21,9 +14,8 @@ typedef struct AllocatedBlock
   void* data;
 } AllocatedBlock;
 
-void dyn_pool_free(int dynamic_pool, int offset)
-{
-  MemoryPool_Dynamic* pool = (MemoryPool_Dynamic*)dynamic_pool;
+void dyn_pool_free(MemoryPool_Dynamic* pool, int offset)
+{  
   AllocatedBlock* alloc = (AllocatedBlock*)((int)&pool->data + offset);
   FreeBlock* previous = NULL;
   int previous_offset = 0;
@@ -74,13 +66,12 @@ void dyn_pool_free(int dynamic_pool, int offset)
   
 }
 
-int dyn_pool_alloc(int dynamic_pool, int requestedSize)
+int dyn_pool_alloc(MemoryPool_Dynamic* pool, int requested_size)
 {
   printf("dyn_pool_alloc enter\n");
-  MemoryPool_Dynamic* pool = (MemoryPool_Dynamic*)dynamic_pool;
   int offset = -1;
   //we always add an extra int's worth for the size header
-  int actualSize = requestedSize + sizeof(int);
+  int actualSize = requested_size + sizeof(int);
   // find a suitable free block.
   int current_offset = pool->free_offset;
   FreeBlock* current = (FreeBlock*)((int)&pool->data + current_offset);
@@ -156,7 +147,7 @@ int dyn_pool_alloc(int dynamic_pool, int requestedSize)
   printf("dyn_pool_alloc exit\n");
 }
 
-void dyn_pool_init(int* owner, int size)
+void dyn_pool_init(MemoryPool_Dynamic** owner, int size)
 {
   //todo: size shoule be -1 because of void*?
   MemoryPool_Dynamic* pool = (MemoryPool_Dynamic*)malloc(size + sizeof(MemoryPool_Dynamic));
@@ -165,29 +156,27 @@ void dyn_pool_init(int* owner, int size)
   free->next_offset = -1;
   pool->free_offset = 0;
   pool->total_size = size + sizeof(MemoryPool_Dynamic);
-  *owner = (int)pool;
+  *owner = pool;
 }
 
-void* dyn_pool_get(int dynamic_pool, int offset)
+void* dyn_pool_get(MemoryPool_Dynamic* pool, int offset)
 {
-  MemoryPool_Dynamic* pool = (MemoryPool_Dynamic*)dynamic_pool;
   int* address = (int*)((int)&pool->data + offset);
   return (void*)address;
 }
 
-int dyn_pool_alloc_set(int dynamic_pool, int amount, int initialValue)
+int dyn_pool_alloc_set(MemoryPool_Dynamic* pool, int amount, int initial_value)
 {
-  int offset = dyn_pool_alloc(dynamic_pool,amount);
+  int offset = dyn_pool_alloc(pool,amount);
   
   if(offset != -1)
     {
 #if DEBUG
       printf("allocated %i bytes at address %p  \n",amount,offset);
 #endif
-      MemoryPool_Dynamic* pool = (MemoryPool_Dynamic*)dynamic_pool;
       // extra int is the size header
       int* address = (int*)((int)&pool->data + offset + sizeof(int));
-      memset(address ,initialValue,amount);
+      memset(address ,initial_value,amount);
 
       //      printf("memset %i bytes at address %p  \n",amount,r);
     }
