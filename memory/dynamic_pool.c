@@ -68,7 +68,7 @@ void dyn_pool_free(MemoryPool_Dynamic* pool, int offset)
 
 int dyn_pool_alloc(MemoryPool_Dynamic* pool, int requested_size)
 {
-  printf("dyn_pool_alloc enter\n");
+  //  printf("dyn_pool_alloc enter\n");
   int offset = -1;
   //we always add an extra int's worth for the size header
   int actualSize = requested_size + sizeof(int);
@@ -82,7 +82,7 @@ int dyn_pool_alloc(MemoryPool_Dynamic* pool, int requested_size)
       return offset;
       
     }
-  printf("searching for free block\n");
+  //  printf("searching for free block\n");
   FreeBlock* previous = NULL;
   int previous_offset = 0;
   while(current->size < actualSize && current->next_offset != -1)
@@ -131,7 +131,7 @@ int dyn_pool_alloc(MemoryPool_Dynamic* pool, int requested_size)
           next_offset = current_offset + actualSize;
         }
     }
-  printf("here!\n");
+
   if(previous == NULL)
     {
       //re-assign root
@@ -144,7 +144,7 @@ int dyn_pool_alloc(MemoryPool_Dynamic* pool, int requested_size)
     }
   
   return offset;
-  printf("dyn_pool_alloc exit\n");
+  //  printf("dyn_pool_alloc exit\n");
 }
 
 void dyn_pool_init(MemoryPool_Dynamic** owner, int size)

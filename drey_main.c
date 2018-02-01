@@ -2,7 +2,7 @@
 #include <windows.h>
 #include "memory\fixed_pool.h"
 #include "memory\dynamic_pool.h"
-
+#include <time.h>
 MemoryPool_Fixed* int_memory = 0; // ints and pointers
 int ref_memory = 0;
 int go_memory = 0;
@@ -295,26 +295,45 @@ int main()
   printf("entry\n");
   int memory = 0;
   
-  fixed_pool_init(&int_memory,8,4);
-  int x = fixed_pool_alloc(int_memory);
-  int* y = (int*)fixed_pool_get(int_memory,x);
-  *y = 42;
+  fixed_pool_init(&int_memory,4,10000000);
+
+  clock_t t;
+    t = clock();
+        t = clock() - t;
+    double time_taken = ((double)t)/CLOCKS_PER_SEC; // in seconds
+ 
+    printf("fun() took %f seconds to execute \n", time_taken);
+t = clock();
+      dyn_pool_init(&dyn_memory,sizeof(int) * 10000000);
+    int off1 = dyn_pool_alloc_set(dyn_memory, 10000000, 1);
+    /* for(int i =0; i < 10000000; i++) */
+    /* { */
+    /*   dyn_pool_alloc(dyn_memory, 1000000); */
+    /*   //      fixed_pool_alloc(int_memory);  */
+    /* } */
+    t = clock() - t;
+     time_taken = ((double)t)/CLOCKS_PER_SEC; // in seconds
+ 
+    printf("fun() took %f seconds to execute \n", time_taken);
+
+  /* int* y = (int*)fixed_pool_get(int_memory,x); */
+  /* *y = 42; */
   
 
       
   /* fixed_pool_init(&ref_memory,sizeof(memref),1024); */
   /* fixed_pool_init(&go_memory,sizeof(go),1024); */
-  dyn_pool_init(&dyn_memory,sizeof(kvp) * 1024);
+ 
 
   /* printf("herehere"); */
-  int off1 = dyn_pool_alloc_set(dyn_memory, 128, 0);
-  int off2 = dyn_pool_alloc_set(dyn_memory, 128, 1);
-  dyn_pool_free(dyn_memory, off1);
-  int  off3 = dyn_pool_alloc_set(dyn_memory, 64, 2);
-  int  off4 = dyn_pool_alloc_set(dyn_memory, 60, 3);
-  int  off5 = dyn_pool_alloc_set(dyn_memory, 64, 4);
-  dyn_pool_free(dyn_memory, off2);
-  int  off6 = dyn_pool_alloc_set(dyn_memory, 64, 5);
+  /* int off1 = dyn_pool_alloc_set(dyn_memory, 128, 0); */
+  /* int off2 = dyn_pool_alloc_set(dyn_memory, 128, 1); */
+  /* dyn_pool_free(dyn_memory, off1); */
+  /* int  off3 = dyn_pool_alloc_set(dyn_memory, 64, 2); */
+  /* int  off4 = dyn_pool_alloc_set(dyn_memory, 60, 3); */
+  /* int  off5 = dyn_pool_alloc_set(dyn_memory, 64, 4); */
+  /* dyn_pool_free(dyn_memory, off2); */
+  /* int  off6 = dyn_pool_alloc_set(dyn_memory, 64, 5); */
   /* HANDLE hStdout, hStdin,hNewScreenBuffer;  */
 
  
