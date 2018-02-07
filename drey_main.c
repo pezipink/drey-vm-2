@@ -1,13 +1,9 @@
 #include <stdio.h>
 #include <windows.h>
-#include "memory\fixed_pool.h"
-#include "memory\dynamic_pool.h"
+#include "memory\manager.h"
+#include "datastructs\refhash.h"
+#include "global.h"
 #include <time.h>
-MemoryPool_Fixed* int_memory = 0; // ints and pointers
-int ref_memory = 0;
-int go_memory = 0;
-MemoryPool_Dynamic* dyn_memory = 0;
-int max_go_id = 1;
 //void drawMemory(HANDLE hNewScreenBuffer, MemoryPool* memory)
 //{
   /* SMALL_RECT srctReadRect;  */
@@ -124,197 +120,52 @@ int max_go_id = 1;
 //}
 
 
-#define Int32 1
-#define Bool 2
-#define Double 3
-#define GameObject 4
-#define String 5
-#define List 6
-#define Function 7
 
 
-typedef struct memref
-{
-  char type;
-  short refcount;
-  int ref_off;
-  int targ_off;
-  
-} memref, stringref, intref;
 
-typedef struct kvp
-{
-  memref key;
-  memref value;
-  struct kvp* next; 
-} kvp;
-
-typedef struct go
-{
-  int id;
-  stringref location_key;
-  stringref visibility;
-  int kvp_count;
-  int bucket_count;
-  int* buckets;
-} go, dict;
-
-
-typedef struct refstack
-{
-  // stack has its own static pool of memory
-  // since we only ever push to the top,
-  // we know it wont "fragment" at the bottom,
-  // and it will be auto resized 
-  int pool;
-  int head_offset;
-} refstack;
-
-
-/* refstack stack_init(int initialSize) */
-/* { */
-/*   printf("stack_init entry\n"); */
-/*   refstack stack; */
-/*   stack.head_offset = 0; */
-/*   fixed_pool_init(&stack.pool, sizeof(int), initialSize); */
-/*   printf("stack_init exit\n"); */
-/*   return stack; */
-/* } */
-
-/* int stack_peek(refstack* stack) */
-/* { */
-/*   return *(int*)fixed_pool_get(stack->pool,stack->head_offset);  */
-/* } */
-
-/* memref* stack_pop(refstack* stack) */
-/* { */
-/*   //  assert(stack->head_offset > 0); */
-/*   int* ref_off = (int*)fixed_pool_get(stack->pool,stack->head_offset); */
-/*   printf("popping stack with ref offset of %i",*ref_off); */
-/*   memref* ref = (memref*)fixed_pool_get(ref_memory,*ref_off); */
-/*   ref->refcount--; */
-/*   fixed_pool_free(stack->pool,stack->head_offset); */
-/*   stack->head_offset -= sizeof(int); */
-/*   return ref; */
-/* } */
-
-/* void stack_push(refstack* stack, memref* ref)//should this be a ptr?? */
-/* { */
-/*   printf("stack_push enter\n"); */
-/*   ref->refcount++;   */
-/*   int offset = fixed_pool_alloc(stack->pool); */
-/*   printf("new offset is %i\n",offset); */
-/*   int* ref_off = (int*)fixed_pool_get(stack->pool,offset); */
-/*   stack->head_offset = offset; */
-/*   *ref_off = ref->ref_off; */
-/* } */
-
-/* memref* malloc_ref(char type, int targ_offset) */
-/* { */
-/*   printf("malloc_ref entry\n"); */
-/*   int ref_off = fixed_pool_alloc(ref_memory); */
-/*   printf("new ref offset is %i\n",ref_off); */
-/*   memref* ref = (memref*)fixed_pool_get(ref_memory,ref_off); */
-/*   ref->ref_off = ref_off; */
-/*   ref->targ_off = targ_offset; */
-/*   ref->type = type; */
-/*   ref->refcount = 0; */
-/*   printf("malloc_ref exit\n"); */
-/*   return ref; */
-/* } */
-
-/* memref* malloc_int(int val) */
-/* { */
-/*   printf("malloc_int entry\n"); */
-/*   //allocate int */
-/*   int int_off = fixed_pool_alloc(int_memory); */
-/*   int* int_val = (int*)fixed_pool_get(int_memory,int_off); */
-/*   *int_val = val; */
-/*   //alloc ref to it */
-/*   memref* ref = malloc_ref(Int32,int_off); */
-/*   printf("malloc_int exit\n"); */
-/*   return ref; */
-/* } */
-
-/* memref* malloc_go() */
-/* { */
-/*   printf("malloc_go entry\n"); */
-/*   int go_off = fixed_pool_alloc(go_memory); */
-/*   go* go_val = (go*)fixed_pool_get(go_memory,go_off); */
-/*   go_val->id = max_go_id++; */
-/*   go_val->kvp_count = 0; */
-/*   go_val->bucket_count = 3; */
-/*   go_val->buckets = 0;// todo: alloc dynamic space for kvp array */
-/*   memref* ref = malloc_ref(GameObject,go_off); */
-/*   printf("malloc_go exit\n"); */
-/*   return ref; */
-/* } */
-
-/* void stack_push_int(refstack* stack, int value) */
-/* { */
-/*   stack_push(stack,malloc_int(42)); */
-/* } */
-
-
-/* int memref_hash(memref* ref) */
-/* { */
-/*   unsigned hash = 42; */
-/*   if(ref->type == Int32) */
-/*     { */
-/*       return *(int*)fixed_pool_get(int_memory, ref->targ_off); */
-/*     } */
-/*   //todo */
-  
-/*   return 42; */
-/* } */
-
-/* void debug_print_stack(refstack* stack) */
-/* {   */
-/*   int* ptr = (int*)fixed_pool_get(stack->pool,0); */
-/*   printf("stack head is at offset %i\n", stack->head_offset); */
-/*   int i = 0; */
-/*   do */
-/*     { */
-/*       printf("index %i ref offset %i\n",i,*ptr); */
-/*       memref* ref = (memref*)fixed_pool_get(ref_memory,*ptr); */
-/*       printf("\tmemref data:\n"); */
-/*       printf("\t\ttype %i\n",ref->type); */
-/*       printf("\t\trefcount %i\n",ref->refcount); */
-/*       printf("\t\tref_off %i\n",ref->ref_off); */
-/*       printf("\t\ttarg_off %i\n",ref->targ_off); */
-/*       i += sizeof(int); */
-/*       ptr++; */
-/*     } */
-/*   while(i <= stack->head_offset); */
-/* } */
     
     
 
 int main()
 {
   printf("entry\n");
+
+  TL("test%i\n", 0);
   int memory = 0;
   
-  fixed_pool_init(&int_memory,4,10000000);
+  fixed_pool_init(&int_memory,sizeof(int),1024);
+  fixed_pool_init(&ref_memory,sizeof(memref),1024);
+  fixed_pool_init(&hash_memory,sizeof(refhash),1024);
+  dyn_pool_init(&dyn_memory,sizeof(int) * 1024);
 
-  clock_t t;
-    t = clock();
-        t = clock() - t;
-    double time_taken = ((double)t)/CLOCKS_PER_SEC; // in seconds
+  memref* h = hash_init(0);
+  memref* i = malloc_int(42);
+  memref* j = malloc_int(58);
+
+  hash_set(h,i,j);
+
+  memref* r = hash_get(h, i);
+  int* x = (int*)deref(r);
+  TL("%i\n",*x);
+  
+  
+/*   clock_t t; */
+/*     t = clock(); */
+/*         t = clock() - t; */
+/*     double time_taken = ((double)t)/CLOCKS_PER_SEC; // in seconds */
  
-    printf("fun() took %f seconds to execute \n", time_taken);
-t = clock();
-      dyn_pool_init(&dyn_memory,sizeof(int) * 10000000);
-    int off1 = dyn_pool_alloc_set(dyn_memory, 10000000, 1);
+/*     printf("fun() took %f seconds to execute \n", time_taken); */
+/* t = clock(); */
+
     /* for(int i =0; i < 10000000; i++) */
     /* { */
     /*   dyn_pool_alloc(dyn_memory, 1000000); */
     /*   //      fixed_pool_alloc(int_memory);  */
     /* } */
-    t = clock() - t;
-     time_taken = ((double)t)/CLOCKS_PER_SEC; // in seconds
+    /* t = clock() - t; */
+    /*  time_taken = ((double)t)/CLOCKS_PER_SEC; // in seconds */
  
-    printf("fun() took %f seconds to execute \n", time_taken);
+    /* printf("fun() took %f seconds to execute \n", time_taken); */
 
   /* int* y = (int*)fixed_pool_get(int_memory,x); */
   /* *y = 42; */
