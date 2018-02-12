@@ -6,8 +6,8 @@
 typedef struct key_value
 {
   memref* key;
-  memref* value;
-  struct key_value* next;
+  memref* val;
+  memref* next;
 } key_value;
 
 typedef struct refhash
@@ -16,8 +16,7 @@ typedef struct refhash
   stringref location_key;
   stringref visibility;
   int kvp_count;
-  int bucket_count;
-  int bucket_off;
+  memref* buckets;
 } refhash;
 
 memref* hash_init(int initial_size);
@@ -30,7 +29,9 @@ key_value* hash_get_kvp(memref* hash, memref* key);
 
 void hash_set(memref* hash, memref* key, memref* value);
 
+void hash_remove(memref* hash, memref* key);
 
+int hash_count(memref* hash);
 
 
 #endif

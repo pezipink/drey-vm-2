@@ -1,7 +1,7 @@
 #ifndef _REFSTACK_H
 #define _REFSTACK_H
-#include "..\memory\fixed_pool.h"
 
+#include "..\memory\manager.h"
 typedef struct refstack
 {
   // stack has its own static pool of memory
@@ -12,5 +12,8 @@ typedef struct refstack
   int head_offset;
 } refstack;
 
+refstack stack_init(int initialSize);
+memref* stack_peek(refstack* stack);
+memref* stack_pop(refstack* stack);
 
 #endif

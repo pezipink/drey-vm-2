@@ -1,6 +1,6 @@
 #include <windows.h>
 #include "fixed_pool.h"
-
+#include "..\global.h"
 // memory pool of fixed size elements. minimum size of int.
 // this allocator has the following properties:
 //   1. Free list is maintained inside the free data at no cost
@@ -22,7 +22,7 @@ int fixed_pool_alloc(MemoryPool_Fixed* pool)
       int newCount = oldCount * 2;
       int newElementSize = (newCount * pool->element_size);
       int newSize =  newElementSize + sizeof(MemoryPool_Fixed);      
-      printf("out of memory, reallocating as size %i\n", newSize);
+      TL("out of memory, reallocating as size %i\n", newSize);
       pool = (MemoryPool_Fixed*)realloc((void*)pool,newSize);
       pool->element_count = newCount;
       offset = pool->free_offset = (oldCount + 1) * pool->element_size;
@@ -70,6 +70,7 @@ void fixed_pool_init(MemoryPool_Fixed** owner, int element_size, int initial_ele
       for(int i = 0; i < initial_element_count - 1; i++)
         {          
           offset += element_size;
+
           *(int*)address = offset;
           address += element_size;
         }

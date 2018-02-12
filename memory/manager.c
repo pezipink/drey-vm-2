@@ -3,9 +3,14 @@
 MemoryPool_Fixed* int_memory = 0; // ints and pointers
 MemoryPool_Fixed* ref_memory = 0;
 MemoryPool_Fixed* hash_memory = 0;
+MemoryPool_Fixed* kvp_memory = 0;
 MemoryPool_Dynamic* dyn_memory = 0;
 int max_hash_id = 1;
 
+memref* get_ref(int offset)
+{
+  return (memref*)fixed_pool_get(ref_memory,offset);
+}
 
 memref* malloc_ref(char type, int targ_offset)
 {
@@ -13,7 +18,7 @@ memref* malloc_ref(char type, int targ_offset)
   int ref_off = fixed_pool_alloc(ref_memory);
   TL("new ref offset is %i\n",ref_off);
   memref* ref = (memref*)fixed_pool_get(ref_memory,ref_off);
-  ref->ref_off = ref_off;
+  // ref->ref_off = ref_off;
   ref->targ_off = targ_offset;
   ref->type = type;
   ref->refcount = 0;
@@ -34,6 +39,7 @@ memref* malloc_int(int val)
   return ref;
 }
 
+
 void* deref(memref* ref)
 {
   switch(ref->type)
@@ -44,12 +50,17 @@ void* deref(memref* ref)
     case Hash:
       return fixed_pool_get(hash_memory, ref->targ_off);
       break;
+    case KVP:
+      return fixed_pool_get(kvp_memory, ref->targ_off);
+    case Array:
+      return dyn_pool_get(dyn_memory, ref->targ_off);
     default:
-      DL("Dereference failed, invalid type");
+      DL("Dereference failed, invalid type %i",ref->type);
       return 0;
+      
     }
 
-  DL("Dereference failed, invalid type");
+  DL("Dereference failed, invalid type %i",ref->type);
   return 0;
 
 }

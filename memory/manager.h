@@ -10,12 +10,14 @@
 #define String 5
 #define List 6
 #define Function 7
+#define Array 8
+#define KVP 9
 
 typedef struct memref
 {
   char type;
   short refcount;
-  int ref_off;
+  //  int ref_off;
   int targ_off;
   
 } memref, stringref, intref;
@@ -23,6 +25,7 @@ typedef struct memref
 extern MemoryPool_Fixed* int_memory; // ints and pointers
 extern MemoryPool_Fixed* ref_memory;
 extern MemoryPool_Fixed* hash_memory;
+extern MemoryPool_Fixed* kvp_memory;
 extern MemoryPool_Dynamic* dyn_memory;
 extern int max_hash_id;
 
@@ -31,6 +34,8 @@ memref* malloc_int(int val);
 
 void* deref(memref* ref);
 
+memref* get_ref(int offset);
+  
 int memref_equal(memref* x, memref* y);
 int memref_hash(memref* ref);
 

@@ -1,7 +1,8 @@
 #ifndef _GLOBAL_H
 #define _GLOBAL_H
 
-//#define TRACE
+
+#define TRACE
 
 #ifdef TRACE
 #define TL(f_, ...) printf((f_), __VA_ARGS__)

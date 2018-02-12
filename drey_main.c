@@ -136,6 +136,7 @@ int main()
   fixed_pool_init(&int_memory,sizeof(int),1024);
   fixed_pool_init(&ref_memory,sizeof(memref),1024);
   fixed_pool_init(&hash_memory,sizeof(refhash),1024);
+  fixed_pool_init(&kvp_memory,sizeof(key_value),2048);
   dyn_pool_init(&dyn_memory,sizeof(int) * 1024);
 
   memref* h = hash_init(0);
