@@ -129,21 +129,26 @@ MU_TEST(_ra_basic)
   ra_append(&ra,&val2);
   mu_check(ra_nth_int(ra,5) == 58);
   memref* ra2 = ra_init(4,4);
-
   
-} 
+}
+void test(memref* hash)
+{
+
+}
 MU_TEST(_ra_complex)
 {
   memref* ra = ra_init(4,4); 
   mu_check(ra_count(ra) == 4);
   mu_check(ra_nth_int(ra,0) == 0);
   memref* ra2 = ra_init(4,4); 
-
-
-  ra_append_memref(&ra,ra2);
+  ra_set_memref(ra,0,&ra2);
   mu_check(ra2->refcount == 1);
-  mu_check(ra_nth_memref(ra,4) == ra2);
-
+  memref* ra3 = ra_nth_memref(ra,0);  
+  mu_check(ra3 == ra2);
+  ra_append_memref(&ra,&ra2);
+  mu_check(ra2->refcount == 2);
+  memref* ra4 = ra_nth_memref(ra,4);  
+  mu_check(ra3 == ra4);
   
 } 
 
@@ -166,6 +171,7 @@ MU_TEST(_stack_basic)
   mu_check(c->refcount == 1);
 
 }
+
 MU_TEST(_stack_complex)
 {
   //stack and hash interaction

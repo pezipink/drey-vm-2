@@ -3,8 +3,6 @@
 #include "..\memory\manager.h"
 #include "..\memory\fixed_pool.h"
 
-
-
 memref* ra_init(int element_size, int element_count)
 {  
   TL("ra_init entry\n");
@@ -61,7 +59,7 @@ void ra_set(memref* ra_ref, int nth, void* new_element)
   #if DEBUG
   if(nth >= ra->element_count)
     {
-      DL("Ciritical error - array out of bounds\n");
+      DL("Critical error - array out of bounds\n");
       return;
     }
   #endif
@@ -69,20 +67,23 @@ void ra_set(memref* ra_ref, int nth, void* new_element)
   memcpy(address,new_element,ra->element_size);
 }
 
-void ra_set_memref(memref* ra_ref, int nth, memref* new_element)
+void ra_set_memref(memref* ra_ref, int nth, memref** new_element)
 {
   refarray* ra = (refarray*)dyn_pool_get(dyn_memory,ra_ref->targ_off);
   #if DEBUG
   if(nth >= ra->element_count)
     {
-      DL("Ciritical error - array out of bounds\n");
+      DL("Critical error - array out of bounds\n");
       return;
     }
   #endif
   memref* ref = (memref*)&ra->data + (nth * ra->element_size);
-  ref->refcount--;
-  new_element->refcount++;
-  memcpy((int)ref,new_element,ra->element_size);
+  if(ref != 0)
+    {
+      ref->refcount--;
+    }
+  (*new_element)->refcount++;
+  memcpy((int)ref,(int)new_element,ra->element_size);
 }
 
 void ra_append(memref** ra_ref, void* new_element)
@@ -115,8 +116,9 @@ void ra_append(memref** ra_ref, void* new_element)
  TL("ra_append exit\n");
  
 }
-void ra_append_memref(memref** ra_ref, memref* new_element)
+
+void ra_append_memref(memref** ra_ref, memref** new_element)
 {
   ra_append(ra_ref, new_element);
-  new_element->refcount++;
+  (*new_element)->refcount++;
 }

@@ -20,5 +20,8 @@ void ra_set(memref* ra_ref, int nth, void* new_element);
 int ra_nth_int(memref* ra_ref, int nth);
 
 memref* ra_nth_memref(memref* ra_ref, int nth);
-  
+
+void ra_append_memref(memref** ra_ref, memref** new_element);
+void ra_set_memref(memref* ra_ref, int nth, memref** new_element);
+
 #endif
