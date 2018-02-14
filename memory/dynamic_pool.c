@@ -3,14 +3,14 @@
 #include "..\global.h"
 typedef struct FreeBlock
 {
-  int size;
-  int next_offset;
+  unsigned size;
+  unsigned next_offset;
   void* data;
 } FreeBlock;
 
 typedef struct AllocatedBlock
 {
-  int size;
+  unsigned size;
   void* data;
 } AllocatedBlock;
 
@@ -19,9 +19,9 @@ typedef struct AllocatedBlock
 void find_adjacent_blocks(MemoryPool_Dynamic* pool,
                           AllocatedBlock* alloc,
                           FreeBlock** previous,
-                          int* previous_offset,
+                          unsigned* previous_offset,
                           FreeBlock** next,
-                          int* next_offset)
+                          unsigned* next_offset)
 {
   *previous = NULL;
   *previous_offset = 0;
@@ -29,31 +29,31 @@ void find_adjacent_blocks(MemoryPool_Dynamic* pool,
   *next_offset = pool->free_offset;
   if(*next_offset != -1)
     {
-      *next = (FreeBlock*)((int)&pool->data + pool->free_offset);  
-      while((int)*next < (int)alloc && (*next)->next_offset != -1)
+      *next = (FreeBlock*)((unsigned)&pool->data + pool->free_offset);  
+      while((unsigned)*next < (unsigned)alloc && (*next)->next_offset != -1)
         {
           *previous = *next;
           *previous_offset = *next_offset;
           *next_offset = (*next)->next_offset;
-          *next = (FreeBlock*)((int)&pool->data + *next_offset);
+          *next = (FreeBlock*)((unsigned)&pool->data + *next_offset);
         }
     }
 }
 
-void dyn_pool_free(MemoryPool_Dynamic* pool, int offset)
+void dyn_pool_free(MemoryPool_Dynamic* pool, unsigned offset)
 {
   TL("entered dyn_pool_free at %p for offset %i\n", pool, offset);
-  AllocatedBlock* alloc = (AllocatedBlock*)((int)&pool->data + offset);
+  AllocatedBlock* alloc = (AllocatedBlock*)((unsigned)&pool->data + offset);
   FreeBlock *previous, *next;
-  int previous_offset, next_offset;
+  unsigned previous_offset, next_offset;
   find_adjacent_blocks(pool,alloc,&previous,&previous_offset,&next,&next_offset);
 
-  int expand_offset = 0;
+  unsigned expand_offset = 0;
   FreeBlock* expand = NULL;
-  //see if we can expand into the block behind us
-  if(previous != NULL && (int)previous + previous->size == (int)alloc)
+  //see if we can expand unsignedo the block behind us
+  if(previous != NULL && (unsigned)previous + previous->size == (unsigned)alloc)
     {
-      TL("expanding into previous block at offset %i\n", previous_offset);
+      TL("expanding unsignedo previous block at offset %i\n", previous_offset);
       expand = previous;
       expand_offset = previous_offset;
       expand->size += alloc->size;
@@ -63,7 +63,7 @@ void dyn_pool_free(MemoryPool_Dynamic* pool, int offset)
     {
       expand_offset = offset;
       expand = (FreeBlock*)alloc;
-      //point the list/root behind at us
+      //pounsigned the list/root behind at us
       if(previous == NULL)
         {
           pool->free_offset = expand_offset;
@@ -76,11 +76,11 @@ void dyn_pool_free(MemoryPool_Dynamic* pool, int offset)
     }
   
   expand->next_offset = next_offset;
-  //see if we can expand into the block in front of us
-  if(next == NULL && (int)next == (int)alloc + alloc->size)
+  //see if we can expand unsignedo the block in front of us
+  if(next == NULL && (unsigned)next == (unsigned)alloc + alloc->size)
     {
       TL("expanding into next block at offset %i\n",next_offset);
-      //consume the next block and point ourself at its next
+      //consume the next block and pounsigned ourself at its next
       expand->size += next->size;
       expand->next_offset = next->next_offset;
     }
@@ -88,32 +88,31 @@ void dyn_pool_free(MemoryPool_Dynamic* pool, int offset)
 }
 
 
-int dyn_pool_alloc_internal(MemoryPool_Dynamic* pool, int requested_size)
+unsigned dyn_pool_alloc_internal(MemoryPool_Dynamic* pool, unsigned requested_size)
 {
-  TL("dyn_pool_alloc_internal enter %p\n", pool);
-  int offset = -1;
-  //we always add an extra int's worth for the size header
-  int actual_size = requested_size + sizeof(int);
+  TL("dyn_pool_alloc_unsignedernal enter %p\n", pool);
+  unsigned offset = -1;
+  //we always add an extra unsigned's worth for the size header
+  unsigned actual_size = requested_size + sizeof(unsigned);
   // find a suitable free block.
-  int current_offset = pool->free_offset;
+  unsigned current_offset = pool->free_offset;
   TL("first free offset is %i\n", pool->free_offset);
-
   if(current_offset == -1)
     {
       TL("Out of memory!\n");
       return offset;
     }
   TL("searching for free block of size %i\n", actual_size);
-  FreeBlock* current = (FreeBlock*)((int)&pool->data + current_offset);
+  FreeBlock* current = (FreeBlock*)((unsigned)&pool->data + current_offset);
   TL("first free block size %i\n", current->size);
   FreeBlock* previous = NULL;
-  int previous_offset = 0;
+  unsigned previous_offset = 0;
   while(current->size < actual_size && current->next_offset != -1)
     {
       previous = current;
       previous_offset = current_offset;            
       current_offset = current->next_offset;
-      current = (FreeBlock*)((int)&pool->data + current_offset);
+      current = (FreeBlock*)((unsigned)&pool->data + current_offset);
       TL("current free block offset %i size %i\n", current_offset, current->size);
     }
   if(current->size < actual_size)
@@ -121,8 +120,8 @@ int dyn_pool_alloc_internal(MemoryPool_Dynamic* pool, int requested_size)
       TL("Block not big enough .. Out of memory!\n");
       return offset;
     }
-  int next_offset = current->next_offset;
-  FreeBlock* next = (FreeBlock*)((int)&pool->data + current->next_offset);
+  unsigned next_offset = current->next_offset;
+  FreeBlock* next = (FreeBlock*)((unsigned)&pool->data + current->next_offset);
   AllocatedBlock* alloc = (AllocatedBlock*)current;
   
   offset = current_offset;
@@ -148,7 +147,7 @@ int dyn_pool_alloc_internal(MemoryPool_Dynamic* pool, int requested_size)
       else
         {
           //setup new free block with the remainder
-          FreeBlock* newBlock = (FreeBlock*)((int)alloc + actual_size);          
+          FreeBlock* newBlock = (FreeBlock*)((unsigned)alloc + actual_size);          
           newBlock->size = current->size - actual_size;
           alloc->size = actual_size;
           newBlock->next_offset = next_offset;
@@ -169,22 +168,23 @@ int dyn_pool_alloc_internal(MemoryPool_Dynamic* pool, int requested_size)
     }
   
   return offset;
-  TL("dyn_pool_alloc_internal exit\n");
+  TL("dyn_pool_alloc_unsignedernal exit\n");
 }
 
-int dyn_pool_alloc(MemoryPool_Dynamic** pool, int requested_size)
+unsigned dyn_pool_alloc(MemoryPool_Dynamic** pool, unsigned requested_size)
 {
   TL("dyn_pool_alloc enter %p\n", *pool);
-  int offset = dyn_pool_alloc_internal(*pool, requested_size);
-  if(offset > -1 )
+  unsigned offset = dyn_pool_alloc_internal(*pool, requested_size);
+
+  if(offset != -1 )
     {
       return offset;
     }
 
-  if(dyn_pool_resize(*pool, requested_size + sizeof(int)))
+  if(dyn_pool_resize(*pool, requested_size + sizeof(unsigned)))
     {
       offset = dyn_pool_alloc_internal(*pool, requested_size);
-      if(offset > -1 )
+      if(offset != -1 )
         {
           return offset;
         }
@@ -201,7 +201,7 @@ int dyn_pool_alloc(MemoryPool_Dynamic** pool, int requested_size)
   return -1;
 }
 
-void dyn_pool_init(MemoryPool_Dynamic** owner, int size)
+void dyn_pool_init(MemoryPool_Dynamic** owner, unsigned size)
 {
   //todo: size shoule be -1 because of void*?
   MemoryPool_Dynamic* pool = (MemoryPool_Dynamic*)malloc(size + sizeof(MemoryPool_Dynamic));
@@ -209,19 +209,19 @@ void dyn_pool_init(MemoryPool_Dynamic** owner, int size)
   free->size = size;
   free->next_offset = -1;
   pool->free_offset = 0;
-  // do not include the size of the data void pointer 
-  pool->total_size = size + sizeof(MemoryPool_Dynamic) - sizeof(int);
+  // do not include the size of the data void pounsigneder 
+  pool->total_size = size + sizeof(MemoryPool_Dynamic) - sizeof(unsigned);
   pool->owner = owner;
   *owner = pool;
 }
 
-bool dyn_pool_resize(MemoryPool_Dynamic* pool, int requested_block_size)
+bool dyn_pool_resize(MemoryPool_Dynamic* pool, unsigned requested_block_size)
 {
   TL("dyn_pool_resize enter %p\n", pool);
   //reallocate here. resize to double, or double the size + request size
-  int new_total_size = 0;
-  int new_block_size = 0;
-  int actual_size = requested_block_size + sizeof(int);
+  unsigned new_total_size = 0;
+  unsigned new_block_size = 0;
+  unsigned actual_size = requested_block_size + sizeof(unsigned);
   if(actual_size > pool->total_size)
     {
       new_block_size = actual_size * 2;
@@ -245,7 +245,7 @@ bool dyn_pool_resize(MemoryPool_Dynamic* pool, int requested_block_size)
       TL("memory totally full, adding new block to end\n");
       //easy case, no free blocks at all so we can just slap one on the end
       //and make it the first offset.
-      FreeBlock* new_block = (FreeBlock*)((int)pool + pool->total_size - sizeof(int));
+      FreeBlock* new_block = (FreeBlock*)((unsigned)pool + pool->total_size - sizeof(unsigned));
       TL("new block is located at %p data starts at %p\n", (void*)new_block, &pool->data);
       new_block->next_offset = -1;
       new_block->size = new_block_size;
@@ -254,16 +254,16 @@ bool dyn_pool_resize(MemoryPool_Dynamic* pool, int requested_block_size)
   else
     {
       //find the last free block - if it is at the end of the memory, we will simply extend it
-      // otherwise insert a new free block into the list with the new memory
+      // otherwise insert a new free block unsignedo the list with the new memory
 
       // get last block
-      int current_offset = pool->free_offset;
-      FreeBlock* current = (FreeBlock*)((int)&pool->data + current_offset);
+      unsigned current_offset = pool->free_offset;
+      FreeBlock* current = (FreeBlock*)((unsigned)&pool->data + current_offset);
       while( current->next_offset != -1)
         {
-          current = (FreeBlock*)((int)&pool->data + current->next_offset);
+          current = (FreeBlock*)((unsigned)&pool->data + current->next_offset);
         }
-      if((int)current + current->size == (int)pool + pool->total_size)
+      if((unsigned)current + current->size == (unsigned)pool + pool->total_size)
         {
           TL("extending last free block to new size\n");
           current->size += new_block_size;
@@ -271,7 +271,7 @@ bool dyn_pool_resize(MemoryPool_Dynamic* pool, int requested_block_size)
       else
         {
           TL("adding new block to the end of the list\n");
-          FreeBlock* new_block = (FreeBlock*)((int)pool + pool->total_size - sizeof(int));
+          FreeBlock* new_block = (FreeBlock*)((unsigned)pool + pool->total_size - sizeof(unsigned));
           TL("new block is located at %p data starts at %p\n", (void*)new_block, &pool->data);
           new_block->next_offset = -1;
           new_block->size = new_block_size;
@@ -293,43 +293,43 @@ bool dyn_pool_resize(MemoryPool_Dynamic* pool, int requested_block_size)
                           
 
 
-int dyn_pool_realloc(MemoryPool_Dynamic** owner, int offset, int new_size)
+unsigned dyn_pool_realloc(MemoryPool_Dynamic** owner, unsigned offset, unsigned new_size)
 {
   MemoryPool_Dynamic* pool = *owner;
   //for now there's no need to support downsizing
-  AllocatedBlock* alloc = (AllocatedBlock*)((int)&pool->data + offset);
+  AllocatedBlock* alloc = (AllocatedBlock*)((unsigned)&pool->data + offset);
   if(alloc->size > new_size)
     {
       TL("warning: attempted to donwnsize block\n");
       return offset;
     }
           
-  int actual_size = new_size + sizeof(int);
+  unsigned actual_size = new_size + sizeof(unsigned);
   //first see if we can extend the existing block to the new size
-  int retOffset = offset;
+  unsigned retOffset = offset;
   TL("current size is %i, attempting to allocate %i to offset %i\n",alloc->size, actual_size, offset);
   FreeBlock *previous, *next;
-  int previous_offset, next_offset;
+  unsigned previous_offset, next_offset;
   find_adjacent_blocks(pool,alloc,&previous,&previous_offset,&next,&next_offset);
   TL("the free block in front is size %i\n", next == NULL ? -1 : next->size);
-  if(next != NULL && (int)next == (int)alloc + alloc->size && (next->size >= actual_size - alloc->size))
+  if(next != NULL && (unsigned)next == (unsigned)alloc + alloc->size && (next->size >= actual_size - alloc->size))
     {          
       //it is big enough.  if the remaining size is not big enough
       //to fit a new free block in, then take all of it, otherwise
       //add a new block and patch up list as appropriate.
-      int rem = (alloc->size + next->size) - actual_size;
+      unsigned rem = (alloc->size + next->size) - actual_size;
       TL("block big enough with a remainder of %i\n", rem);
-      if(rem > sizeof(FreeBlock) - sizeof(int))
+      if(rem > sizeof(FreeBlock) - sizeof(unsigned))
         {          
-          FreeBlock* newBlock = (FreeBlock*)((int)alloc + actual_size);
+          FreeBlock* newBlock = (FreeBlock*)((unsigned)alloc + actual_size);
           
           //grab these up front as they might be overlapping with
           //the new block! todo: might need to write this bit in asm
           //if the optimizer breaks it?
-          int oldSize = next->size;
-          int oldOffset = next->next_offset;
-          int sizeDiff = oldSize - actual_size;
-          int offsetDelta = actual_size - alloc->size;
+          unsigned oldSize = next->size;
+          unsigned oldOffset = next->next_offset;
+          unsigned sizeDiff = oldSize - actual_size;
+          unsigned offsetDelta = actual_size - alloc->size;
           newBlock->size = sizeDiff;
           alloc->size = actual_size;
           newBlock->next_offset = oldOffset;
@@ -349,7 +349,7 @@ int dyn_pool_realloc(MemoryPool_Dynamic** owner, int offset, int new_size)
           TL("block is not big enough for a new block, assigning all %i\n ", next->size);
           
           // gobble up the memory and set the previous
-          // offset pointer to whatever was in front
+          // offset pounsigneder to whatever was in front
           if(previous == NULL)
             {
               pool->free_offset = next->next_offset;
@@ -369,12 +369,12 @@ int dyn_pool_realloc(MemoryPool_Dynamic** owner, int offset, int new_size)
       //is at the end of the existing block in which case we can extend it.
       retOffset = dyn_pool_alloc_set(owner,actual_size,0);
       pool = *owner;
-      AllocatedBlock* newAlloc = (AllocatedBlock*)((int)&pool->data + retOffset);
+      AllocatedBlock* newAlloc = (AllocatedBlock*)((unsigned)&pool->data + retOffset);
 
       //todo: extend block if its the one at the end.
       TL("new space is at offset %i \n", retOffset);
       //copy data and free old block.
-      memcpy(&newAlloc->data,&alloc->data,alloc->size - sizeof(int));
+      memcpy(&newAlloc->data,&alloc->data,alloc->size - sizeof(unsigned));
       dyn_pool_free(pool, offset);
       
 
@@ -383,28 +383,28 @@ int dyn_pool_realloc(MemoryPool_Dynamic** owner, int offset, int new_size)
   return retOffset;
 }
 
-void* dyn_pool_get(MemoryPool_Dynamic* pool, int offset)
+void* dyn_pool_get(MemoryPool_Dynamic* pool, unsigned offset)
 {
-  AllocatedBlock* address = (AllocatedBlock*)((int)&pool->data + offset);
+  AllocatedBlock* address = (AllocatedBlock*)((unsigned)&pool->data + offset);
   return &address->data;
 }
 
-int dyn_pool_get_size(MemoryPool_Dynamic* pool, int offset)
+unsigned dyn_pool_get_size(MemoryPool_Dynamic* pool, unsigned offset)
 {
-  AllocatedBlock* address = (AllocatedBlock*)((int)&pool->data + offset);
+  AllocatedBlock* address = (AllocatedBlock*)((unsigned)&pool->data + offset);
   return address->size;
 }
 
-int dyn_pool_alloc_set(MemoryPool_Dynamic** pool, int amount, int initial_value)
+unsigned dyn_pool_alloc_set(MemoryPool_Dynamic** pool, unsigned amount, unsigned initial_value)
 {
-  int offset = dyn_pool_alloc(pool,amount);
+  unsigned offset = dyn_pool_alloc(pool,amount);
   
   if(offset != -1)
     {
       TL("allocated %i bytes at address %p  \n",amount,offset);
-      // extra int is the size header
+      // extra unsigned is the size header
       MemoryPool_Dynamic* p = *pool;
-      int* address = (int*)((int)&p->data + offset + sizeof(int));
+      unsigned* address = (unsigned*)((unsigned)&p->data + offset + sizeof(unsigned));
       memset(address ,initial_value,amount);
 
     }

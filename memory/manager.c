@@ -5,17 +5,17 @@ MemoryPool_Fixed* ref_memory = 0;
 MemoryPool_Fixed* hash_memory = 0;
 MemoryPool_Fixed* kvp_memory = 0;
 MemoryPool_Dynamic* dyn_memory = 0;
-int max_hash_id = 1;
+unsigned max_hash_id = 1;
 
-memref* get_ref(int offset)
+memref* get_ref(unsigned offset)
 {
   return (memref*)fixed_pool_get(ref_memory,offset);
 }
 
-memref* malloc_ref(char type, int targ_offset)
+memref* malloc_ref(char type, unsigned targ_offset)
 {
   TL("malloc_ref entry\n");
-  int ref_off = fixed_pool_alloc(ref_memory);
+  unsigned ref_off = fixed_pool_alloc(ref_memory);
   TL("new ref offset is %i\n",ref_off);
   memref* ref = (memref*)fixed_pool_get(ref_memory,ref_off);
   // ref->ref_off = ref_off;
@@ -30,7 +30,7 @@ memref* malloc_int(int val)
 {
   TL("malloc_int entry\n");
   //allocate int
-  int int_off = fixed_pool_alloc(int_memory);
+  unsigned int_off = fixed_pool_alloc(int_memory);
   int* int_val = (int*)fixed_pool_get(int_memory,int_off);
   *int_val = val;
   //alloc ref to it
@@ -55,7 +55,8 @@ void* deref(memref* ref)
     case Array:
       return dyn_pool_get(dyn_memory, ref->targ_off);
     default:
-      DL("Dereference failed, invalid type %i",ref->type);
+      DL("Dereference failed, invalid type %i\n",ref->type);
+      DL("targ off %i\n",ref->targ_off);
       return 0;
       
     }
@@ -63,6 +64,11 @@ void* deref(memref* ref)
   DL("Dereference failed, invalid type %i",ref->type);
   return 0;
 
+}
+
+void* deref_off(unsigned ref_off)
+{
+  return deref(get_ref(ref_off));
 }
 
 int memref_equal(memref* x, memref* y)
@@ -90,15 +96,73 @@ int memref_equal(memref* x, memref* y)
 
   return 0;
 }
+unsigned elf_hash(void *key, int len)
+{
+    unsigned char *p = key;
+    unsigned h = 0, g;
+    int i;
 
-int memref_hash(memref* ref)
+    for (i = 0; i < len; i++)
+    {
+        h = (h << 4) + p[i];
+        g = h & 0xf0000000L;
+
+        if (g != 0)
+        {
+            h ^= g >> 24;
+        }
+
+        h &= ~g;
+    }
+
+    return h;
+}
+unsigned fnv_hash(void *key, int len)
+{
+    unsigned char *p = key;
+    unsigned h = 2166136261;
+    int i;
+
+    for (i = 0; i < len; i++)
+    {
+        h = (h * 16777619) ^ p[i];
+    }
+
+    return h;
+}
+unsigned oat_hash(void *key, int len)
+{
+    unsigned char *p = key;
+    unsigned h = 0;
+    int i;
+
+    for (i = 0; i < len; i++)
+    {
+        h += p[i];
+        h += (h << 10);
+        h ^= (h >> 6);
+    }
+
+    h += (h << 3);
+    h ^= (h >> 11);
+    h += (h << 15);
+
+    return h;
+}
+
+unsigned memref_hash(memref* ref)
 {
   unsigned hash = 42;
   if(ref->type == Int32)
     {
-      return *(int*)fixed_pool_get(int_memory, ref->targ_off);
+      unsigned x = *(unsigned*)fixed_pool_get(int_memory, ref->targ_off);
+      TL("passing %i to oat_hash\n", x);
+      unsigned h = fnv_hash(&x,sizeof(int));
+      TL("hash is %i \n",h);
+      return h;
+
     }
   //todo
-  
+  DL("NO HASH FUNCTION FOUND!!\n");
   return 42;
 }

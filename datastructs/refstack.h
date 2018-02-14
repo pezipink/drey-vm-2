@@ -15,5 +15,6 @@ typedef struct refstack
 refstack stack_init(int initialSize);
 memref* stack_peek(refstack* stack);
 memref* stack_pop(refstack* stack);
-
+void stack_push(refstack* stack, memref* ref);
+  
 #endif

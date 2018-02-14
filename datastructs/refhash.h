@@ -19,7 +19,7 @@ typedef struct refhash
   memref* buckets;
 } refhash;
 
-memref* hash_init(int initial_size);
+memref* hash_init(unsigned initial_size);
 
 memref* hash_get(memref* hash, memref* key);
 

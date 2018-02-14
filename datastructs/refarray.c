@@ -3,7 +3,7 @@
 #include "..\memory\manager.h"
 #include "..\memory\fixed_pool.h"
 
-memref* ra_init(int element_size, int element_count)
+memref* ra_init(unsigned element_size, unsigned element_count)
 {  
   TL("ra_init entry\n");
   int ra_off = dyn_pool_alloc_set(&dyn_memory,element_size * element_count + (sizeof(refarray)-sizeof(int)),0);
@@ -18,20 +18,19 @@ memref* ra_init(int element_size, int element_count)
   return ra_ref;
 }
 
-int ra_count(memref* ra_ref)
+unsigned ra_count(memref* ra_ref)
 {
   refarray* ra = (refarray*)dyn_pool_get(dyn_memory,ra_ref->targ_off);
   return ra->element_count;
 }
 
-
-void* ra_nth(memref* ra_ref, int nth)
+void* ra_nth(memref* ra_ref, unsigned nth)
 {
   refarray* ra = (refarray*)dyn_pool_get(dyn_memory,ra_ref->targ_off);
   #if DEBUG
   if(nth >= ra->element_count)
     {
-      DL("Ciritical error - array out of bounds\n");
+      DL("Ciritical error - array out of bounds. nth is %i but count is %i\n", nth, ra->element_count);
       return 0;
     }
   #endif
@@ -41,25 +40,25 @@ void* ra_nth(memref* ra_ref, int nth)
 
 // conviencce function, assumes data is an int and returns it
 //rather than the pointer to it
-int ra_nth_int(memref* ra_ref, int nth)
+int ra_nth_int(memref* ra_ref, unsigned nth)
 {
   int* add = ra_nth(ra_ref, nth);
   return *add;
 }
 
-memref* ra_nth_memref(memref* ra_ref, int nth)
+memref* ra_nth_memref(memref* ra_ref, unsigned nth)
 {
   memref** add = ra_nth(ra_ref, nth);
   return *add;
 }
 
-void ra_set(memref* ra_ref, int nth, void* new_element)
+void ra_set(memref* ra_ref, unsigned nth, void* new_element)
 {
   refarray* ra = (refarray*)dyn_pool_get(dyn_memory,ra_ref->targ_off);
   #if DEBUG
   if(nth >= ra->element_count)
     {
-      DL("Critical error - array out of bounds\n");
+      DL("Ciritical error - array out of bounds. nth is %i but count is %i\n", nth, ra->element_count);
       return;
     }
   #endif
@@ -67,13 +66,13 @@ void ra_set(memref* ra_ref, int nth, void* new_element)
   memcpy(address,new_element,ra->element_size);
 }
 
-void ra_set_memref(memref* ra_ref, int nth, memref** new_element)
+void ra_set_memref(memref* ra_ref, unsigned nth, memref** new_element)
 {
   refarray* ra = (refarray*)dyn_pool_get(dyn_memory,ra_ref->targ_off);
   #if DEBUG
   if(nth >= ra->element_count)
     {
-      DL("Critical error - array out of bounds\n");
+      DL("Ciritical error - array out of bounds. nth is %i but count is %i\n", nth, ra->element_count);      
       return;
     }
   #endif
@@ -96,9 +95,9 @@ void ra_append(memref** ra_ref, void* new_element)
  // total size includes 1 int for the memory block size itself and another 2 for the element size and count
   int usedSize = (ra->element_size * ra->element_count) + (sizeof(int) * 3);
   TL("used size is %i\n",usedSize);
- int remSize = memSize - usedSize;
+  int remSize = memSize - usedSize;
   TL("rem size is %i\n",remSize);
- if(remSize < ra->element_size)
+  if(remSize < ra->element_size)
    {
      // reallocate double the space
      TL("targ was %i\n",targ_off); 

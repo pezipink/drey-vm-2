@@ -17,8 +17,7 @@ typedef struct memref
 {
   char type;
   short refcount;
-  //  int ref_off;
-  int targ_off;
+  unsigned targ_off;  
   
 } memref, stringref, intref;
 
@@ -27,16 +26,18 @@ extern MemoryPool_Fixed* ref_memory;
 extern MemoryPool_Fixed* hash_memory;
 extern MemoryPool_Fixed* kvp_memory;
 extern MemoryPool_Dynamic* dyn_memory;
-extern int max_hash_id;
+extern unsigned max_hash_id;
 
-memref* malloc_ref(char type, int targ_offset);
+memref* malloc_ref(char type, unsigned targ_offset);
 memref* malloc_int(int val);
 
 void* deref(memref* ref);
+void* deref_off(unsigned offset);
+memref* get_ref(unsigned offset);
 
-memref* get_ref(int offset);
-  
+
+
 int memref_equal(memref* x, memref* y);
-int memref_hash(memref* ref);
+unsigned memref_hash(memref* ref);
 
 #endif 

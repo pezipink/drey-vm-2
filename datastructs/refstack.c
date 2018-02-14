@@ -13,8 +13,7 @@ refstack stack_init(int initialSize)
 }
 
 memref* stack_peek(refstack* stack)
-{
-  
+{  
   return *(memref**)fixed_pool_get(stack->pool,stack->head_offset);
 }
 
@@ -43,7 +42,7 @@ void stack_push(refstack* stack, memref* ref)
 
 void stack_push_int(refstack* stack, int value)
 {
-  stack_push(stack,malloc_int(42));
+  stack_push(stack,malloc_int(value));
 }
 
 
