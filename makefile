@@ -5,7 +5,7 @@ drey: drey_main.c
 
 
 drey_test: drey_test.c
-    $(CC) /Zi drey_test.c memory\fixed_pool.c memory\dynamic_pool.c memory\manager.c datastructs\refstack.c datastructs\refhash.c datastructs\refarray.c /DDEBUG
+    $(CC) /Zi drey_test.c vm\vm.c memory\fixed_pool.c memory\dynamic_pool.c memory\manager.c datastructs\refstack.c datastructs\refhash.c datastructs\refarray.c /DDEBUG
 
 drey_test_r: drey_test.c
-    $(CC) /Ox drey_test.c memory\fixed_pool.c memory\dynamic_pool.c memory\manager.c datastructs\refstack.c datastructs\refhash.c datastructs\refarray.c 
+    $(CC) /Ox drey_test.c vm\vm.c memory\fixed_pool.c memory\dynamic_pool.c memory\manager.c datastructs\refstack.c datastructs\refhash.c datastructs\refarray.c 

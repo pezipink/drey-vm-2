@@ -2,50 +2,72 @@
 #include "..\memory\manager.h"
 #include "..\global.h"
 
-refstack stack_init(int initialSize)
+memref stack_init(int initialSize)
 {
   TL("stack_init entry\n");
-  refstack stack;
-  stack.head_offset = 0;
-  fixed_pool_init(&stack.pool, sizeof(memref*), initialSize);
+  int off = fixed_pool_alloc(stack_memory);
+  refstack* stack = (refstack*)fixed_pool_get(stack_memory,off);
+  stack->head_offset = 0;  
+  fixed_pool_init(&stack->pool, sizeof(memref), initialSize);
   TL("stack_init exit\n");
-  return stack;
-}
-
-memref* stack_peek(refstack* stack)
-{  
-  return *(memref**)fixed_pool_get(stack->pool,stack->head_offset);
-}
-
-memref* stack_pop(refstack* stack)
-{
-  //  assert(stack->head_offset > 0);
-  memref* ref = *(memref**)fixed_pool_get(stack->pool,stack->head_offset);
-  //  TL("popping stack with ref offset of %i",*ref);
-  //memref* ref = (memref*)fixed_pool_get(ref_memory,*ref_off);
-  ref->refcount--;
-  fixed_pool_free(stack->pool,stack->head_offset);
-  stack->head_offset -= sizeof(int);
+  memref ref = malloc_ref(Stack,off);
   return ref;
 }
 
-void stack_push(refstack* stack, memref* ref)
+memref stack_peek(memref stack_ref)
+{
+  refstack* stack = deref(&stack_ref);
+  return *(memref*)fixed_pool_get(stack->pool,stack->head_offset);
+}
+
+memref stack_pop(memref stack_ref)
+{
+  TL("stack_pop entry\n");
+  refstack* stack = deref(&stack_ref);
+  //  assert(stack->head_offset > 0);
+  #if DEBUG
+  if(stack->head_offset == 0xFFFFFFFF)
+    {
+      DL("!!!attempted to pop stack with no values !!!!\n");
+    }
+  #endif
+  memref ref = *(memref*)fixed_pool_get(stack->pool,stack->head_offset);
+  //TL("popping stack with ref offset of %i",*ref);  
+  //memref* ref = (memref*)fixed_pool_get(ref_memory,*ref_off);
+  dec_refcount(ref);
+  fixed_pool_free(stack->pool,stack->head_offset);
+  stack->head_offset -= sizeof(memref);
+  TL("stack_pop exit\n");
+  return ref;
+}
+
+void stack_push(memref stack_ref, memref ref)
 {
   TL("stack_push enter\n");
-  ref->refcount++;
+  refstack* stack = deref(&stack_ref);
+  inc_refcount(ref);
   int offset = fixed_pool_alloc(stack->pool);
-  memref** ref_off = (memref**)fixed_pool_get(stack->pool,offset);
+  memref* ref_off = (memref*)fixed_pool_get(stack->pool,offset);
   stack->head_offset = offset;
   *ref_off = ref;
   TL("stack_push exit\n");
  }
 
-void stack_push_int(refstack* stack, int value)
-{
-  stack_push(stack,malloc_int(value));
-}
+/* void stack_push_int(refstack* stack, int value) */
+/* { */
+/*   memref v; */
+/*   v.type = Int32; */
+/*   v.data.i = value; */
+/*   stack_push(stack,v); */
+/* } */
 
-
+/* void stack_push_double(refstack* stack, double value) */
+/* { */
+/*   memref v; */
+/*   v.type = Double; */
+/*   v.data.d = value; */
+/*   stack_push(stack,v); */
+/* } */
 /* void debug_print_stack(refstack* stack) */
 /* { */
 /*   int* ptr = (int*)fixed_pool_get(stack->pool,0); */
