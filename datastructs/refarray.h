@@ -14,6 +14,7 @@ typedef struct refarray
 
 
 memref ra_init(unsigned element_size, unsigned element_capacity);
+memref ra_init_str(char* str);
 unsigned ra_count(memref ra_ref);
 void* ra_nth(memref ra_ref, unsigned nth);
 void ra_append(memref ra_ref, void* new_element);
@@ -22,11 +23,10 @@ int ra_nth_int(memref ra_ref, unsigned nth);
 
 void ra_append_int(memref ra_ref, int val);
 void ra_append_char(memref ra_ref, char val);
-
+void ra_free(memref ra_ref);
 
 memref ra_nth_memref(memref ra_ref, unsigned nth);
 
-/* void ra_append_memref(memref* ra_ref, memref* new_element); */
-/* void ra_set_memref(memref ra_ref, unsigned nth, memref* new_element); */
-
+void ra_wl(memref ra_ref);
+void ra_w(memref ra_ref);
 #endif

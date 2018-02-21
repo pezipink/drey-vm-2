@@ -4,6 +4,7 @@
 
 
 //#define TRACE
+//#define VM_DEBUG
 
 #ifdef TRACE
 #define TL(f_, ...) printf((f_), __VA_ARGS__)
@@ -15,6 +16,12 @@
 #define DL(f_, ...) printf((f_), __VA_ARGS__)
 #else
 #define DL(F,...)
+#endif
+
+#ifdef VM_DEBUG
+#define VL(f_, ...) printf((f_), __VA_ARGS__)
+#else
+#define VL(F,...)
 #endif
 
 

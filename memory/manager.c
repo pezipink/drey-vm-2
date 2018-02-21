@@ -81,6 +81,38 @@ memref malloc_int(int val)
   return v;
 }
 
+/* void free_memref(memref ref, int ref_offset) */
+/* { */
+/*   //assume refcount is already zero */
+/*   switch(ref.data.r->type) */
+/*     { */
+/*     case Array: */
+/*       DL("freeing string..\n"); */
+/*       ra_free(memref); */
+/*       break; */
+
+/*     case Array: */
+/*       DL("freeing array..\n"); */
+/*       ra_free(memref); */
+/*       break; */
+/*     case Hash: */
+/*       DL("freeing hash..\n"); */
+/*       hash_free(ref); */
+/*       break; */
+/*     case KVP: */
+/*       DL("freeing kvp..\n"); */
+/*       key_value* kvp = deref(&ref); */
+/*       dec_refcount(kvp->key); */
+/*       dec_refcount(kvp->value); */
+/*       fixed_pool_free(kvp_memory, ref.data.r->targ_off); */
+/*       break; */
+/*     default: */
+/*       DL("didnt know how to free memory type %i\n", ref.type); */
+/*       return; */
+/*     } */
+
+/*   fixed_pool_free(ref_memory,ref_offset); */
+/* } */
 
 void* deref(memref* ref)
 {
@@ -122,37 +154,104 @@ void* deref_off(unsigned ref_off)
   return deref(&m);
 }
 
+
+
 int memref_equal(memref x, memref y)
 {
-  if(x.type != y.type)
-    {
-      return 0;
-    }
   switch(x.type)
     {
     case Int32:
-      int* a = (int*)deref(&x);
-      int* b = (int*)deref(&y);
-      if(*a == *b)
+      switch(y.type)
         {
-          return 1;
+        case Int32:
+          int* iia = (int*)deref(&x);
+          int* iib = (int*)deref(&y);
+          if(*iia == *iib)
+            {
+              return 1;
+            }
+          else
+            {
+              return 0;
+            }
+        case Bool:
+          int* iba = (int*)deref(&x);
+          int* ibb = (int*)deref(&y);
+          if(*iba != 0 && *ibb != 0)
+            {
+              return 1;
+            }
+          else if(*iba == 0 && *ibb == 0)
+            {
+              return 1;
+            }
+          else
+            {
+              return 0;
+            }
+          
+        default:
+          break;
         }
-      else
+
+    case Bool:
+      switch(y.type)
         {
-          return 0;
+        case Int32:
+          int* bia = (int*)deref(&x);
+          int* bib = (int*)deref(&y);
+          if(*bia != 0 && *bib != 0)
+            {
+              return 1;
+            }
+          else if(*bia == 0 && *bib == 0)
+            {
+              return 1;
+            }
+          else
+            {
+              return 0;
+            }
+        case Bool:
+          int* bba = (int*)deref(&x);
+          int* bbb = (int*)deref(&y);
+          return *bba == *bbb;
+          
+        default:
+          break;
         }
-      break;
+
     case String:
-      refarray* s1 = deref(&x); 
-      refarray* s2 = deref(&y);
-      if(s1->element_count != s2->element_count)
+    case Array:
+      switch(y.type)
         {
-          return 0;
+        case String:
+          if(x.data.r->targ_off == y.data.r->targ_off)
+            {
+              return 1;
+            }
+          
+          refarray* ss1 = deref(&x); 
+          refarray* ss2 = deref(&y);
+          if(ss1->element_count != ss2->element_count)
+            {
+              return 0;
+            }
+          return memcmp(&ss1->data,&ss2->data,ss1->element_count) == 0;
+        default:
+          break;
         }
-      return memcmp(&s1->data,&s2->data,s1->element_count) == 0;
       
     default:
-      DL("!!! NO EQUAL FUNCTION FOR %i and %i!\n", x.type, y.type);
+      if(x.type >= Hash && y.type >= Hash && x.type == y.type)
+        {
+          DL("Default reference equality used for type %i\n", x.type);
+          return x.data.r->targ_off == y.data.r->targ_off;
+        }
+      else
+        {          
+          DL("!!! NO EQUAL FUNCTION FOR %i and %i!\n", x.type, y.type);
+        }
     }
 
   return 0;
@@ -178,6 +277,7 @@ unsigned elf_hash(void *key, int len)
 
     return h;
 }
+
 unsigned fnv_hash(void *key, int len)
 {
     unsigned char *p = key;
@@ -223,13 +323,9 @@ unsigned memref_hash(memref ref)
 
     case String:
       refarray* ra = deref(&ref);
-
       unsigned h = fnv_hash(&ra->data,sizeof(char) * ra->element_count);
-      /* tl("hash is %i \n",h); */
       return h;
-      
-      break;
-      //todo
+
     default:
       DL("NO HASH FUNCTION FOUND FOR TYPE %i!!\n",ref.type);
       break;

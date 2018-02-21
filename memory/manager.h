@@ -19,11 +19,13 @@
 #define Scope 38
 #define Stack 39
 
+
 typedef struct ref
 {
-  char type;
+  unsigned int targ_off;
   short refcount;
-  unsigned targ_off;
+  char type; //msb is 1 if in use (for gc)
+ 
 } ref;
 
 typedef struct memref
@@ -58,7 +60,9 @@ memref malloc_ref(char type, unsigned targ_offset);
 memref malloc_kvp(memref key, memref val, memref next);
 memref malloc_int(int val);
 
-void* deref(memref* ref);
+void free_memref(memref key, int mem_ref);
+
+inline void* deref(memref* ref);
 void* deref_off(unsigned offset);
 ref* get_ref(unsigned offset);
 

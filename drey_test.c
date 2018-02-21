@@ -2,6 +2,7 @@
 #include "global.h"
 #include "memory\manager.h"
 #include "datastructs\refhash.h"
+#include "datastructs\refhash_test.h"
 #include "datastructs\refstack.h"
 #include "datastructs\refarray.h"
 #include "vm\vm.h"
@@ -15,118 +16,6 @@ static void teardown(void)
 {
   return;
 } 
-
-
-// REFHASH TESTS
-/* MU_TEST(_kvp_pool) */
-/* { */
-/*   memref* a = malloc_int(10); */
-/*   memref* b = malloc_int(20); */
-/*   memref* bb = malloc_int(20); */
-/*   memref* c = malloc_kvp(a,b,(memref*)0); */
-/*   memref* d = malloc_kvp(a,b,(memref*)0); */
-/*   memref* e = malloc_kvp(a,b,(memref*)0); */
-/*   memref* f = malloc_kvp(a,b,(memref*)0); */
-
-/* } */
-/* // INT KEY AND VALUE */
-MU_TEST(_hash_int_key_and_value)
-{
-  memref h = hash_init(1);
-  memref key = int_to_memref(42);
-  memref value = int_to_memref(42);
-  hash_set(h,key,value);
-  memref r = hash_get(h, key);
-  int* x = (int*)deref(&r);
-  mu_check(*x == value.data.i);
-}
-
-MU_TEST(_hash_contains_int)
-{
-  memref h = hash_init(1);
-  memref key = int_to_memref(42);
-  memref value = int_to_memref(58);
-  hash_set(h,key,value);
-  mu_check(hash_contains(h,key));
-  mu_check(!hash_contains(h,value));
-}
-
-MU_TEST(_hash_resize)
-{
-
-  memref h = hash_init(3);
-  /* mu_check(h != NULL); */
-  /* int key = 42; */
-  /* int value = 58; */
-  /*   memref* i = malloc_int(42); */
-  memref j = int_to_memref(58);
-  /* memref* k = malloc_int(1834); */
-  /* memref* l = malloc_int(22); */
-  /* memref* m = malloc_int(-390656); */
-    
-  /* hash_set(h,i,j); */
-  /* hash_set(h,j,j); */
-  /* hash_set(h,k,j); */
-  /* hash_set(h,l,j); */
-  /* hash_set(h,m,j); */
-
-  DL("before\n");
-  for(int z = 0; z < 2000; z++)
-    {
-      hash_set(h,int_to_memref(z),j);
-    }
-
-  DL("FINISHED\n");
-  refhash* hash = deref(&h);
-
-  int collisions = 0;
-  int unusedbuckets = 0;
-  int maxcoll = 0;
-  int tot = 0;
-  for(int i = 0; i < ra_count(hash->buckets); i++)
-    {
-      memref c = ra_nth_memref(hash->buckets, i);
-      if(c.type == 0)
-        {
-          unusedbuckets++;
-        }
-      else
-        {
-          key_value* kvp = deref(&c);
-          tot += *(int*)deref(&kvp->val);
-          if(kvp->next.type != 0)
-            {
-              // collisions ++;
-              //int count = 0;
-              while(kvp->next.type != 0)
-                {
-                  //  count++;
-                  kvp = deref(&kvp->next);
-                }
-              /* if(count > maxcoll) */
-              /*   { */
-              /*     //                  maxcoll = count; */
-              /*   } */
-              tot += *(int*)deref(&kvp->val);
-            }
-              
-          
-        }
-
-    }
-  DL("hash ended with %i kvps and %i buckets\n", hash->kvp_count, ra_count(hash->buckets));
-  DL("hash has %i unused buckets and at least %i collisions\n", unusedbuckets, collisions);
-  DL("max items in a bucket %i\n", maxcoll);
-  
-    /* for(int z = 0; z < 1000; z++) */
-    /* { */
-    /*   memref zz = int_to_memref(z); */
-    /*   memref val = hash_get(h,zz); */
-    /*   int xx = *(int*)deref(&val); */
-    /*        DL("index % i has val %i\n", z, xx); */
-    /* } */
-
-}
 
 MU_TEST(_dyn_resize)
 {
@@ -284,36 +173,37 @@ MU_TEST(_vm_a)
 MU_TEST_SUITE(test_suite)
 {
   MU_SUITE_CONFIGURE(&setup,&teardown);
-    
+
   fixed_pool_init(&int_memory,sizeof(int),100);
-  fixed_pool_init(&ref_memory,sizeof(memref),14284700); //10mb of refs
+  fixed_pool_init(&ref_memory,sizeof(ref),14284700); //10mb of refs
   fixed_pool_init(&hash_memory,sizeof(refhash),1024);
   fixed_pool_init(&scope_memory,sizeof(scope),10);
   fixed_pool_init(&stack_memory,sizeof(refstack),1);
   fixed_pool_init(&kvp_memory,sizeof(key_value),1000000);
   dyn_pool_init(&dyn_memory,sizeof(int) * 1);
 
-
-  MU_RUN_TEST(_hash_int_key_and_value);
-  MU_RUN_TEST(_hash_contains_int);
-
-
-  MU_RUN_TEST(_hash_resize);
-  MU_RUN_TEST(_dyn_resize);
-  MU_RUN_TEST(_dyn_resize_2);
+  /* MU_RUN_TEST(_dyn_resize); */
+  /* MU_RUN_TEST(_dyn_resize_2); */
   
-  MU_RUN_TEST(_dyn_realloc);
-  MU_RUN_TEST(_ra_basic);
-/* mu_RUN_TEST(_ra_complex); */
-  MU_RUN_TEST(_stack_basic);
-  MU_RUN_TEST(_stack_complex);
+  /* MU_RUN_TEST(_dyn_realloc); */
+  /* MU_RUN_TEST(_ra_basic); */
+  /* MU_RUN_TEST(_ra_complex); */
+  /* MU_RUN_TEST(_stack_basic); */
+  /* MU_RUN_TEST(_stack_complex); */
   DL("core tests finihsed\n");
-   MU_RUN_TEST(_vm_a);
+ 
+  MU_RUN_TEST(_vm_a);
 }
+
+
 
 int main(int argc, char *argv[])
 {
   MU_RUN_SUITE(test_suite);
+  /* MU_RUN_SUITE(refhash_suite); */
+  gc_print_stats();
+  /* gc_clean_full(); */
+  
   MU_REPORT();
   return 0;
 }

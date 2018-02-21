@@ -26,6 +26,19 @@ void ra_consume_capacity(memref ra_ref)
   refarray* ra = (refarray*)dyn_pool_get(dyn_memory,ra_ref.data.r->targ_off);
   ra->element_count = ra->element_capacity;
 }
+
+//creates a strng from a c-style sring
+memref ra_init_str(char* str)
+{
+  int len = strlen(str);
+  memref r = ra_init(sizeof(char),len);
+  r.type = String;
+  ra_consume_capacity(r);
+  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,r.data.r->targ_off);
+  memcpy(&ra->data,str,len);
+  return r;  
+}
+
 unsigned ra_count(memref ra_ref)
 {
   refarray* ra = (refarray*)dyn_pool_get(dyn_memory,ra_ref.data.r->targ_off);
@@ -159,6 +172,12 @@ void ra_append_char(memref ra_ref, char val)
 ///prints string
 void ra_wl(memref ra_ref)
 {
+  ra_w(ra_ref);
+  putchar('\n');
+}
+
+void ra_w(memref ra_ref)
+{
   refarray* ra = (refarray*)dyn_pool_get(dyn_memory,ra_ref.data.r->targ_off);
 
   char* data = (char*)&ra->data;
@@ -166,5 +185,4 @@ void ra_wl(memref ra_ref)
     {
       putchar(*data++);
     }
-  putchar('\n');
 }

@@ -151,3 +151,4 @@ typedef struct vm
 
 vm init_vm();
 #endif
+

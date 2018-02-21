@@ -61,6 +61,7 @@ void fixed_pool_init(MemoryPool_Fixed** owner, unsigned element_size, unsigned i
   unsigned actualElementSize = (element_size * initial_element_count); 
   unsigned actualSize =  actualElementSize + sizeof(MemoryPool_Fixed);
   MemoryPool_Fixed* data = (MemoryPool_Fixed*)malloc(actualSize);
+  memset(&data->data,0,actualElementSize);
   if(data)
     {
       data->free_offset = 0;
@@ -73,7 +74,7 @@ void fixed_pool_init(MemoryPool_Fixed** owner, unsigned element_size, unsigned i
       for(unsigned i = 0; i < initial_element_count - 1; i++)
         {          
           offset += element_size;
-
+          
           *(unsigned*)address = offset;
           address += element_size;
         }
@@ -82,7 +83,7 @@ void fixed_pool_init(MemoryPool_Fixed** owner, unsigned element_size, unsigned i
   *owner = data;
 }
 
-void* fixed_pool_get(MemoryPool_Fixed* pool, unsigned offset)
+ void* fixed_pool_get(MemoryPool_Fixed* pool, unsigned offset)
 {
   unsigned* address = (unsigned*)((unsigned)&pool->data + offset);
   return (void*)address;

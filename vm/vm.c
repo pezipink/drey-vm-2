@@ -132,6 +132,16 @@ vm init_vm()
   return v;
 }
 
+
+#define DIE(f_, ...) printf((f_), __VA_ARGS__); exit(0);
+#define POP stack_pop(ec->eval_stack)
+#define PEEK stack_peek(ec->eval_stack)
+#define PEEK_REF stack_peek_ref(ec->eval_stack)
+#define PUSH(V) stack_push(ec->eval_stack,V)
+#define READ_INT  i =  read_int(vm,ec); 
+#define READ_STR READ_INT \
+      str = hash_get(vm->string_table,int_to_memref(i));
+
 scope* current_scope(exec_context * const ec)
 {
   int n = ra_count(ec->scopes) - 1;
@@ -139,418 +149,667 @@ scope* current_scope(exec_context * const ec)
   return (scope*)deref(&r);
 }
 
-memref load_val(scope* s, memref key)
+
+
+
+memref load_var(scope* s, memref key)
 {
-  if(hash_contains(s->locals,key))
+  memref ret;
+  
+  if(hash_try_get(&ret,s->locals,key))
     {
-      return hash_get(s->locals,key);
+      return ret;
     }
-  if(s->closure_scope.type == Scope)
+  else if(s->closure_scope.type == Scope)
     {
-      return load_val(deref(&s->closure_scope),key);
+      return load_var(deref(&s->closure_scope),key);
     }
   else
     {
-      DL("!!!!!!!! CRITICAL ERROR, cOULD NOT FIND VAL\n");
+      DIE("!!!!!!!! CRITICAL ERROR, cOULD NOT FIND VAL\n");
+    }
 
-    }     
+  memref r;
+  r.type = 0;
+  return r;
 }
+
+void replace_var(scope* s, memref key, memref val)
+{
+  if(hash_contains(s->locals,key))
+    {
+      hash_set(s->locals,key, val);
+    }
+  else if(s->closure_scope.type == Scope)
+    {
+      replace_var(deref(&s->closure_scope),key,val);
+    }
+  else
+    {
+      DIE("!!!!!!!! CRITICAL ERROR, COULD NOT FIND VAL\n");
+    }
+}
+
 
 int step(vm* const vm, exec_context * const ec)
 {
   enum opcode o = *(char*)ra_nth(vm->program,ec->pc++);
-  int val;
-  
+  int i;
+  memref ma, mb, mc, md;
+  memref* mp;
   memref str;
+  scope* scope;
     switch(o)
     {
     case brk:
-      DL("brk Not implemented\n");
+      VL("brk Not implemented\n");
       break;
+      
     case pop:
-      DL("pop Not implemented\n");
+      VL("pop\n");
+      POP;
       break;
+      
     case swap:
-      DL("swap Not implemented\n");
+      VL("swap\n");
+      ma = POP;
+      mb = POP;
+      PUSH(ma);
+      PUSH(mb);
       break;
+      
     case swapn:
-      DL("swapn Not implemented\n");
+      VL("swapn Not implemented\n");
       break;
+      
     case dup:
-      DL("dup Not implemented\n");
+      VL("dup Not implemented\n");
       break;
+      
     case ldval:
-      val =  read_int(vm,ec);
-      DL("ldval %i\n",val);
-      stack_push(ec->eval_stack,int_to_memref(val));
+      READ_INT;
+      VL("ldval %i\n",i);
+      PUSH(int_to_memref(i));
       break;
+      
     case ldvals:
-      val =  read_int(vm,ec); // string index
-      DL("sldvals %i : ",val);
-      str =hash_get(vm->string_table,int_to_memref(val));
+      READ_STR;
+      #ifdef VM_DEBUG
       ra_wl(str);
-      stack_push(ec->eval_stack,str);
+      #endif
+      PUSH(str);
       break;
+      
     case ldvalb:
-      DL("ldvalb Not implemented\n");
+      VL("ldvalb Not implemented\n");
       break;
+      
     case ldvar:
-      val =  read_int(vm,ec); // string index
-      DL("ldvar %i : ",val);
-      str=hash_get(vm->string_table,int_to_memref(val));
-      stack_push(ec->eval_stack,load_val(current_scope(ec),str));
-      break;
-    case stvar:
-      val =  read_int(vm,ec); // string index
-      DL("stvar %i : ",val);
-      str =hash_get(vm->string_table,int_to_memref(val));
+      VL("ldvar\n");
+      READ_STR;
+      #ifdef VM_DEBUG
       ra_wl(str);
-      scope* scope = current_scope(ec);
-      memref val = stack_pop(ec->eval_stack);
-      hash_set(scope->locals,str,val);
+      #endif
+      ma = load_var(current_scope(ec),str);
+      VL("loaded var ");
+      #ifdef VM_DEBUG
+      ra_w(str);
+      #endif
+      VL(" with a value of %i\n", ma.data.i);
+         
+      PUSH(ma);
       break;
+      
+    case stvar:
+      VL("stvar ");
+      READ_STR;
+      #ifdef VM_DEBUG
+      ra_wl(str);
+      #endif
+      scope = current_scope(ec);
+      ma = POP;
+      hash_set(scope->locals,str,ma);
+      break;
+      
     case p_stvar:
-      DL("p_stvar Not implemented\n");
+      VL("p_stvar ");
+      READ_STR;
+      #ifdef VM_DEBUG
+      ra_wl(str);
+      #endif
+      scope = current_scope(ec);
+      ma = PEEK;
+      hash_set(scope->locals,str,ma);
       break;
+      
     case rvar:
-      DL("rvar Not implemented\n");
+      VL("rvar ");      
+      READ_STR;
+#ifdef VM_DEBUG
+      ra_wl(str);
+      #endif
+      replace_var(current_scope(ec),str,POP);
       break;
+      
     case ldprop:
-      DL("ldprop Not implemented\n");
+      VL("ldprop Not implemented\n");
       break;
+      
     case p_ldprop:
-      DL("p_ldprop Not implemented\n");
+      VL("p_ldprop Not implemented\n");
       break;
+      
     case stprop:
-      DL("stprop Not implemented\n");
+      VL("stprop Not implemented\n");
       break;
+      
     case p_stprop:
-      DL("p_stprop Not implemented\n");
+      VL("p_stprop Not implemented\n");
       break;
+      
     case inc:
-      DL("inc Not implemented\n");
+      VL("inc\n");
+      mp = PEEK_REF;
+      if(mp->type == Int32)
+        {
+          VL("data was %i\n", mp->data.i);
+          mp->data.i ++;
+          VL("now %i\n", mp->data.i);
+        }
+      else
+        {
+          DIE("!! inc expcted a int32 but got a %i\n",mp->type);
+        }
       break;
+      
     case dec:
-      DL("dec Not implemented\n");
+      VL("dec\n");
+      mp = PEEK_REF;
+      if(mp->type == Int32)
+        {
+          mp->data.i--;
+        }
+      else
+        {
+          DIE("!! dec expcted a int32 but got a %i\n",mp->type);
+        }
       break;
+      
     case neg:
-      DL("neg Not implemented\n");
+      VL("neg\n");
+      mp = PEEK_REF;
+      if(mp->type == Int32)
+        {
+          mp->data.i = -mp->data.i;
+        }
+      else
+        {
+          DIE("!! inc expcted a int32 but got a %i\n",mp->type);
+        }
       break;
+       
     case add:
-      DL("add\n");
-      memref a = stack_pop(ec->eval_stack);
-      memref b = stack_pop(ec->eval_stack);
-      int c = a.data.i + b.data.i;
-      stack_push(ec->eval_stack,int_to_memref(c));
+      VL("add\n");
+      ma = POP;
+      mb = POP;
+      //todo: support adding of strings
+      if(ma.type != Int32 || mb.type != Int32)
+        {
+          DIE("add only supports ints!");
+        }
+      PUSH(int_to_memref( ma.data.i + mb.data.i));
       break;
     case sub:
-      DL("sub Not implemented\n");
+      VL("sub\n");
+      ma = POP;
+      mb = POP;
+      if(ma.type != Int32 || mb.type != Int32)
+        {
+          DIE("sub only supports ints!");
+        }
+      PUSH(int_to_memref( ma.data.i - mb.data.i)); 
       break;
     case mul:
-      DL("mul Not implemented\n");
+      VL("mul\n");
+      ma = POP;
+      mb = POP;
+      if(ma.type != Int32 || mb.type != Int32)
+        {
+          DIE("mul only supports ints!");
+        }
+      PUSH(int_to_memref( ma.data.i * mb.data.i)); 
+
+
       break;
     case _div:
-      DL("div Not implemented\n");
+      VL("div\n");
+      ma = POP;
+      mb = POP;
+      if(ma.type != Int32 || mb.type != Int32)
+        {
+          DIE("div only supports ints!");
+        }
+      PUSH(int_to_memref( ma.data.i / mb.data.i)); 
+
       break;
     case mod:
-      DL("mod Not implemented\n");
+      VL("mod\n");
+      ma = POP;
+      mb = POP;
+      if(ma.type != Int32 || mb.type != Int32)
+        {
+          DIE("mod only supports ints!");
+        }
+      PUSH(int_to_memref( ma.data.i % mb.data.i)); 
       break;
     case _pow:
-      DL("pow Not implemented\n");
+      VL("pow Not implemented\n");
       break;
     case tostr:
-      DL("tostr Not implemented\n");
+      VL("tostr Not implemented\n");
       break;
     case toint:
-      DL("toint Not implemented\n");
+      VL("toint Not implemented\n");
       break;
     case rndi:
-      DL("rndi Not implemented\n");
+      VL("rndi Not implemented\n");
       break;
     case startswith:
-      DL("startswith Not implemented\n");
+      VL("startswith Not implemented\n");
       break;
     case p_startswith:
-      DL("p_startswith Not implemented\n");
+      VL("p_startswith Not implemented\n");
       break;
     case endswith:
-      DL("endswith Not implemented\n");
+      VL("endswith Not implemented\n");
       break;
     case p_endswith:
-      DL("p_endswith Not implemented\n");
+      VL("p_endswith Not implemented\n");
       break;
     case contains:
-      DL("contains Not implemented\n");
+      VL("contains Not implemented\n");
       break;
     case p_contains:
-      DL("p_contains Not implemented\n");
+      VL("p_contains Not implemented\n");
       break;
     case indexof:
-      DL("indexof Not implemented\n");
+      VL("indexof Not implemented\n");
       break;
     case p_indexof:
-      DL("p_indexof Not implemented\n");
+      VL("p_indexof Not implemented\n");
       break;
     case substring:
-      DL("substring Not implemented\n");
+      VL("substring Not implemented\n");
       break;
     case p_substring:
-      DL("p_substring Not implemented\n");
+      VL("p_substring Not implemented\n");
       break;
+
     case ceq:
-      DL("ceq Not implemented\n");
+      VL("ceq\n");
+      PUSH(int_to_memref(memref_equal(POP,POP)));
       break;
+      
     case cne:
-      DL("cne Not implemented\n");
-      break;
+      VL("cne\n");
+      i = memref_equal(POP,POP);
+
+      if(i == 0)
+        {
+          VL("cne was %i\n", 1);
+          PUSH(int_to_memref(1));
+        }
+      else
+        {
+          VL("cne was %i\n", 0);
+          PUSH(int_to_memref(0));
+        }
+
     case cgt:
-      DL("cgt Not implemented\n");
+      break;
+      VL("cgt Not implemented\n");
       break;
     case cgte:
-      DL("cgte Not implemented\n");
+      VL("cgte Not implemented\n");
       break;
     case clt:
-      DL("clt Not implemented\n");
+      VL("clt Not implemented\n");
       break;
     case clte:
-      DL("clte Not implemented\n");
+      VL("clte Not implemented\n");
       break;
     case beq:
-      DL("beq Not implemented\n");
+      VL("beq\n");
+      READ_INT;
+      if(memref_equal(POP,POP))
+        {
+          ec->pc = i - 5;
+        }
+
       break;
     case bne:
-      DL("bne Not implemented\n");
+      VL("bne\n");
+      READ_INT;
+      ma = POP;
+      mb = POP;
+      if(!memref_equal(ma,mb))
+        {
+          ec->pc += i - 5;
+        }
       break;
+      
     case bgt:
-      DL("bgt Not implemented\n");
+      VL("bgt Not implemented\n");
       break;
+      
     case blt:
-      DL("blt Not implemented\n");
+      VL("blt Not implemented\n");
       break;
+      
     case bt:
-      DL("bt Not implemented\n");
+      VL("bt \n");
+      READ_INT;
+      ma = POP;
+      if(ma.data.i != 0 )
+        {
+          VL("branch taken\n");
+          ec->pc += i - 5;
+        }
       break;
+      
     case bf:
-      DL("bf Not implemented\n");
+      VL("bf\n");
+      READ_INT;
+      ma = POP;
+      if(ma.data.i == 0 )
+        {
+          VL("branch taken\n");
+          ec->pc += i - 5;
+        }
       break;
+      
     case branch:
-      DL("branch Not implemented\n");
+      VL("branch\n");
+      READ_INT;
+      ec->pc += i - 5;
       break;
+      
     case isobj:
-      DL("isobj Not implemented\n");
+      VL("isobj Not implemented\n");
       break;
     case isint:
-      DL("isint Not implemented\n");
+      VL("isint Not implemented\n");
       break;
     case isbool:
-      DL("isbool Not implemented\n");
+      VL("isbool Not implemented\n");
       break;
     case isloc:
-      DL("isloc Not implemented\n");
+      VL("isloc Not implemented\n");
       break;
     case islist:
-      DL("islist Not implemented\n");
+      VL("islist Not implemented\n");
       break;
     case createobj:
-      DL("createobj Not implemented\n");
+      VL("createobj Not implemented\n");
       break;
     case cloneobj:
-      DL("cloneobj Not implemented\n");
+      VL("cloneobj Not implemented\n");
       break;
     case getobj:
-      DL("getobj Not implemented\n");
+      VL("getobj Not implemented\n");
       break;
     case getobjs:
-      DL("getobjs Not implemented\n");
+      VL("getobjs Not implemented\n");
       break;
     case delprop:
-      DL("delprop Not implemented\n");
+      VL("delprop Not implemented\n");
       break;
     case p_delprop:
-      DL("p_delprop Not implemented\n");
+      VL("p_delprop Not implemented\n");
       break;
     case delobj:
-      DL("delobj Not implemented\n");
+      VL("delobj Not implemented\n");
       break;
     case moveobj:
-      DL("moveobj Not implemented\n");
+      VL("moveobj Not implemented\n");
       break;
     case p_moveobj:
-      DL("p_moveobj Not implemented\n");
+      VL("p_moveobj Not implemented\n");
       break;
     case createlist:
-      DL("createlist Not implemented\n");
+      VL("createlist\n");
+      ma = ra_init(sizeof(memref),3);
+      stack_push(ec->eval_stack,ma);
       break;
     case appendlist:
-      DL("appendlist Not implemented\n");
+      VL("appendlist\n");
+      ma = POP;
+      mb = POP;
+      #if DEBUG
+      if(mb.type != Array)
+        {
+          VL("Execpted list in p_appendlist but got %i\n",mb.type);
+        }
+      #endif
+      ra_append_memref(mb,ma);
+
       break;
     case p_appendlist:
-      DL("p_appendlist Not implemented\n");
+      VL("p_appendlist\n");
+      ma = POP;
+      mb = PEEK;      
+      #if DEBUG
+      if(mb.type != Array)
+        {
+          VL("Execpted list in p_appendlist but got %i\n",mb.type);
+        }
+      #endif
+      ra_append_memref(mb,ma);
       break;
     case prependlist:
-      DL("prependlist Not implemented\n");
+      VL("prependlist Not implemented\n");
       break;
     case p_prependlist:
-      DL("p_prependlist Not implemented\n");
+      VL("p_prependlist Not implemented\n");
       break;
     case removelist:
-      DL("removelist Not implemented\n");
+      VL("removelist Not implemented\n");
       break;
     case p_removelist:
-      DL("p_removelist Not implemented\n");
+      VL("p_removelist Not implemented\n");
       break;
     case len:
-      DL("len Not implemented\n");
+      VL("len\n");
+      PUSH(int_to_memref(ra_count(POP)));
       break;
     case p_len:
-      DL("p_len Not implemented\n");
+      VL("p_len\n");
+      PUSH(int_to_memref(ra_count(PEEK)));
       break;
+
     case index:
-      DL("index Not implemented\n");
+      VL("index\n");
+      ma = POP;
+      mb = POP;
+      PUSH(ra_nth_memref(mb,ma.data.i));
       break;
+      
     case p_index:
-      DL("p_index Not implemented\n");
+      VL("p_index\n");
+      ma = POP;
+      mb = PEEK;
+      PUSH(ra_nth_memref(mb,ma.data.i));
       break;
+      
     case setindex:
-      DL("setindex Not implemented\n");
+      VL("setindex\n");
+      ma = POP;
+      mb = POP;
+      mc = POP;
+      #if DEBUG
+      if(mb.type != Int32)
+        {
+          DIE("setindex called with a non int index");
+        }
+      if(mc.type != Array)
+        {
+          DIE("setindex called with a non array ");
+        }
+      #endif
+      ra_set_memref(mc,mb.data.i,ma);
       break;
+      
     case keys:
-      DL("keys Not implemented\n");
+      VL("keys Not implemented\n");
       break;
     case values:
-      DL("values Not implemented\n");
+      VL("values Not implemented\n");
       break;
     case syncprop:
-      DL("syncprop Not implemented\n");
+      VL("syncprop Not implemented\n");
       break;
     case getloc:
-      DL("getloc Not implemented\n");
+      VL("getloc Not implemented\n");
       break;
     case genloc:
-      DL("genloc Not implemented\n");
+      VL("genloc Not implemented\n");
       break;
     case genlocref:
-      DL("genlocref Not implemented\n");
+      VL("genlocref Not implemented\n");
       break;
     case setlocsibling:
-      DL("setlocsibling Not implemented\n");
+      VL("setlocsibling Not implemented\n");
       break;
     case p_setlocsibling:
-      DL("p_setlocsibling Not implemented\n");
+      VL("p_setlocsibling Not implemented\n");
       break;
     case setlocchild:
-      DL("setlocchild Not implemented\n");
+      VL("setlocchild Not implemented\n");
       break;
     case p_setlocchild:
-      DL("p_setlocchild Not implemented\n");
+      VL("p_setlocchild Not implemented\n");
       break;
     case setlocparent:
-      DL("setlocparent Not implemented\n");
+      VL("setlocparent Not implemented\n");
       break;
     case p_setlocparent:
-      DL("p_setlocparent Not implemented\n");
+      VL("p_setlocparent Not implemented\n");
       break;
     case getlocsiblings:
-      DL("getlocsiblings Not implemented\n");
+      VL("getlocsiblings Not implemented\n");
       break;
     case p_getlocsiblings:
-      DL("p_getlocsiblings Not implemented\n");
+      VL("p_getlocsiblings Not implemented\n");
       break;
     case getlocchildren:
-      DL("getlocchildren Not implemented\n");
+      VL("getlocchildren Not implemented\n");
       break;
     case p_getlocchildren:
-      DL("p_getlocchildren Not implemented\n");
+      VL("p_getlocchildren Not implemented\n");
       break;
     case getlocparent:
-      DL("getlocparent Not implemented\n");
+      VL("getlocparent Not implemented\n");
       break;
     case p_getlocparent:
-      DL("p_getlocparent Not implemented\n");
+      VL("p_getlocparent Not implemented\n");
       break;
     case setvis:
-      DL("setvis Not implemented\n");
+      VL("setvis Not implemented\n");
       break;
     case p_setvis:
-      DL("p_setvis Not implemented\n");
+      VL("p_setvis Not implemented\n");
       break;
     case adduni:
-      DL("adduni Not implemented\n");
+      VL("adduni Not implemented\n");
       break;
     case deluni:
-      DL("deluni Not implemented\n");
+      VL("deluni Not implemented\n");
       break;
     case splitat:
-      DL("splitat Not implemented\n");
+      VL("splitat Not implemented\n");
       break;
     case shuffle:
-      DL("shuffle Not implemented\n");
+      VL("shuffle Not implemented\n");
       break;
     case sort:
-      DL("sort Not implemented\n");
+      VL("sort Not implemented\n");
       break;
     case sortby:
-      DL("sortby Not implemented\n");
+      VL("sortby Not implemented\n");
       break;
     case genreq:
-      DL("genreq Not implemented\n");
+      VL("genreq Not implemented\n");
       break;
     case addaction:
-      DL("addaction Not implemented\n");
+      VL("addaction Not implemented\n");
       break;
     case p_addaction:
-      DL("p_addaction Not implemented\n");
+      VL("p_addaction Not implemented\n");
       break;
     case suspend:
-      DL("suspend Not implemented\n");
+      VL("suspend Not implemented\n");
       break;
     case cut:
-      DL("cut Not implemented\n");
+      VL("cut Not implemented\n");
       break;
     case say:
-      DL("say Not implemented\n");
+      VL("say Not implemented\n");
       break;
     case pushscope:
-      DL("pushscope Not implemented\n");
+      VL("pushscope Not implemented\n");
       break;
     case popscope:
-      DL("popscope Not implemented\n");
+      VL("popscope Not implemented\n");
       break;
     case lambda:
-      DL("lambda Not implemented\n");
+      VL("lambda Not implemented\n");
       break;
     case apply:
-      DL("apply Not implemented\n");
+      VL("apply Not implemented\n");
       break;
     case ret:
       if(ra_count(ec->scopes) == 1)
         {
-          DL("Program end.\n");          
+          VL("Program end.\n");          
           return 1;      
         }
       else
         {
-          DL("ret: not implemented");
+          VL("ret: not implemented");
           break;
         }
       
-    case dbg:
-      DL("dbg Not implemented\n");
-      break;
-    case dbgl:
-      DL("dbgl\n");
-      memref r = stack_pop(ec->eval_stack);
-      if(r.type==Int32)
+    case dbg:      
+      VL("dbg\n");
+      ma = POP;
+      if(ma.type==Int32)
         {
-          DL("%i\n",r.data.i);
+          printf("%i",ma.data.i);
         }
-      else if(r.type == String)
+      else if(ma.type == String)
         {
-          ra_wl(r);
+          ra_w(ma);
         }
       else
         {
-          DL("dbgl not implemented for type %i\n", r.type);
+          printf("dbg not implemented for type %i\n", ma.type);
+        }
+
+      break;
+    case dbgl:
+      VL("dbgl\n");
+      ma = stack_pop(ec->eval_stack);
+      if(ma.type==Int32)
+        {
+          printf("%i\n",ma.data.i);
+        }
+      else if(ma.type == String)
+        {
+          ra_wl(ma);
+        }
+      else
+        {
+          printf("dbgl not implemented for type %i\n", ma.type);
         }
       break;
 
@@ -568,5 +827,5 @@ void run(vm* vm)
       
     }
 
-  DL("run finihsed\n");
+  VL("run finihsed\n");
 }

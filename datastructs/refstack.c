@@ -20,6 +20,13 @@ memref stack_peek(memref stack_ref)
   return *(memref*)fixed_pool_get(stack->pool,stack->head_offset);
 }
 
+memref* stack_peek_ref(memref stack_ref)
+{
+  refstack* stack = deref(&stack_ref);
+  return (memref*)fixed_pool_get(stack->pool,stack->head_offset);
+}
+
+
 memref stack_pop(memref stack_ref)
 {
   TL("stack_pop entry\n");
