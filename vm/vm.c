@@ -70,8 +70,8 @@ void read_program(vm* const vm)
       len = to_int(&buffer[0]);
       lSize -= 4;
       lSize -= len * sizeof(char);
-      memref r = ra_init(sizeof(char),len);
-      r.type = String;
+      memref r = ra_init_raw(sizeof(char),len, String);
+
       ra_consume_capacity(r);
       refarray* ra = deref(&r);
       fread(&ra->data,sizeof(char),len,file);
@@ -81,6 +81,7 @@ void read_program(vm* const vm)
   fread(&buffer,sizeof(char),4,file);
   vm->entry_point = to_int(&buffer[0]);
   vm->program = ra_init(sizeof(char),lSize);
+  inc_refcount(vm->program);
   ra_consume_capacity(vm->program);
   refarray* ra = deref(&vm->program);
   fread(&ra->data,sizeof(char),lSize,file);
@@ -94,19 +95,23 @@ memref init_scope()
   unsigned int off = fixed_pool_alloc(scope_memory);
   scope* s = (scope*)fixed_pool_get(scope_memory, off);
   s->locals = hash_init(1);
+  inc_refcount(s->locals);
   s->return_address = 0;
-  memref r = malloc_ref(Scope,off);
+  memref r = malloc_ref(Scope,off);  
   return r;
 }
+
 
 exec_context init_exec_context()
 {
   exec_context ec;
   ec.eval_stack = stack_init(1);
+  inc_refcount(ec.eval_stack);
   ec.pc = 0;
   memref scopes = ra_init(sizeof(memref),1);
+  inc_refcount(scopes);
   memref scope = init_scope();
-  ra_append(scopes, &scope);
+  ra_append_memref(scopes, scope);
   ec.scopes = scopes;
   return ec;
 }
@@ -116,6 +121,7 @@ fiber init_fiber(int id)
   fiber f;
   f.id = id;
   f.exec_contexts = ra_init(sizeof(exec_context),1);
+  inc_refcount(f.exec_contexts);
   exec_context ex = init_exec_context();
   ra_append(f.exec_contexts,&ex);
   return f;
@@ -125,7 +131,14 @@ vm init_vm()
 {
   vm v;
   v.string_table = hash_init(100);
+  inc_refcount(v.string_table);
+  
   v.fibers = ra_init(sizeof(fiber),1);
+  inc_refcount(v.fibers);
+  
+  v.gc_off = 0;
+  v.cycle_count = 0;
+  
   fiber f = init_fiber(0);
   ra_append(v.fibers,&f);
   read_program(&v);
@@ -266,9 +279,11 @@ int step(vm* const vm, exec_context * const ec)
       #ifdef VM_DEBUG
       ra_wl(str);
       #endif
+      //      gc_print_stats();
       scope = current_scope(ec);
       ma = POP;
       hash_set(scope->locals,str,ma);
+      //            gc_print_stats();
       break;
       
     case p_stvar:
@@ -824,7 +839,13 @@ void run(vm* vm)
   exec_context* ec = (exec_context*)ra_nth(f->exec_contexts,0);
   while(step(vm,ec) == 0)
     {
-      
+      vm->cycle_count++;
+                     gc_clean_full();
+      if(vm->cycle_count % 10 == 0)
+        {
+
+          //          vm->gc_off = gc_clean_step(vm->gc_off);
+        }
     }
 
   VL("run finihsed\n");

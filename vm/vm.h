@@ -143,6 +143,8 @@ typedef struct fiber
 typedef struct vm
 {
   int pc;
+  int gc_off;
+  int cycle_count;
   memref program;
   memref string_table;
   int entry_point;

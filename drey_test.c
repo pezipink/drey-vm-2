@@ -219,11 +219,11 @@ MU_TEST_SUITE(test_suite)
   MU_RUN_TEST(_dyn_resize_2);
   
   MU_RUN_TEST(_dyn_realloc);
-  MU_RUN_TEST(_ra_basic);
-  MU_RUN_TEST(_ra_complex);
-  MU_RUN_TEST(_stack_basic);
-  MU_RUN_TEST(_stack_complex);
-  dl("core tests finihsed\n");
+  /* MU_RUN_TEST(_ra_basic); */
+  /* MU_RUN_TEST(_ra_complex); */
+  /* MU_RUN_TEST(_stack_basic); */
+  /* MU_RUN_TEST(_stack_complex); */
+  DL("core tests finihsed\n");
  
   MU_RUN_TEST(_vm_a);
 }
@@ -234,7 +234,7 @@ int main(int argc, char *argv[])
 {
   MU_RUN_SUITE(gc_suite);
 
-  /* MU_RUN_SUITE(test_suite); */
+  MU_RUN_SUITE(test_suite);
   /* MU_RUN_SUITE(refhash_suite); */
 
   /* gc_clean_full(); */

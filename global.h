@@ -4,7 +4,7 @@
 
 
 //#define TRACE
-#define VM_DEBUG
+//#define VM_DEBUG
 
 #ifdef TRACE
 #define TL(f_, ...) printf((f_), __VA_ARGS__)

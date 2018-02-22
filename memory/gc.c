@@ -49,10 +49,10 @@ void gc_print_stats()
 int gc_clean_full()
 {
   int cycles = 1;
-  DL("iteration 0\n");
+  //  DL("iteration 0\n");
   while(gc_clean_sweep())
     {
-      DL("iteration %i\n",cycles);
+      //      DL("iteration %i\n",cycles);
       cycles ++;
     }
   return cycles;
@@ -60,7 +60,7 @@ int gc_clean_full()
 
 int gc_clean_sweep()
 {
-  DL("gc_clean_full enter\n");
+  //  DL("gc_clean_sweep enter\n");
   // single sweep and free on all references
   int offset = 0;
   int max = ref_memory->element_count;
@@ -105,6 +105,7 @@ int gc_clean_step(int last_offset)
   int toFree = 0;
   ref* item = (ref*)((int)&ref_memory->data + last_offset);
   int maxOffset = ref_memory->element_count * sizeof(ref);
+  DL("max offset %i\n",maxOffset);
   int newOffset = last_offset;
   for(int i = 0; i < steps; i++)
     {

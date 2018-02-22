@@ -272,6 +272,7 @@ void hash_resize(refhash* h)
 
           kvp->next = current;
           ra_set(new_buckets,bucket_index,&item);
+          inc_refcount(item);
           
           TL("kvp->next = %i\n",kvp->next);
           item = next;
@@ -282,8 +283,8 @@ void hash_resize(refhash* h)
     }
 
   
-  TL("freeing old buckets\n");
-  dyn_pool_free(dyn_memory,get_ref(h->buckets.data.i)->targ_off);
+  /* TL("freeing old buckets\n"); */
+  /* dyn_pool_free(dyn_memory,get_ref(h->buckets.data.i)->targ_off); */
   TL("assigning new bucket list\n");
   h->buckets = new_buckets;
   inc_refcount(h->buckets);//.data.r->refcount++;

@@ -213,11 +213,11 @@ void ra_free(ref* ra_ref)
   memref* data = (memref*)&ra->data;
   for(int i = 0; i < max; i++)
     {
-      TL("!!TESTTING type %i\n", data->type);
+      //    DL("!!TESTTING type %i\n", data->type);
       if(data->type == KVP)
         {
           dec_refcount(*data);
-          TL("KVP\n");
+          DL("KVP\n");
           key_value* kvp = deref(data);
           while(1)
             {
@@ -239,7 +239,8 @@ void ra_free(ref* ra_ref)
         }
       data++;
     }  
-    
+
+  
   dyn_pool_free(dyn_memory, targ_off);
   TL("ra_free exit\n");
 }
