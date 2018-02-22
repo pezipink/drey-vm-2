@@ -148,9 +148,7 @@ MU_TEST(_stack_basic)
   for(int i = 0; i < 1000; i ++)
     {
       stack_pop(st);
-    }
-
- 
+    } 
 }
 
 
@@ -170,27 +168,62 @@ MU_TEST(_vm_a)
 
 }
 
+MU_TEST(_gc_main)
+{
+  gc_print_stats();
+  memref st = hash_init(0);
+  memref sa = ra_init_str("A");
+  hash_set(st,int_to_memref(1),sa);
+  for(int i = 0; i < 100; i ++)
+    {
+      ra_init_str("B");
+    }
+  gc_print_stats();
+  int off = 0;
+  for(int i = 0; i < 50; i++)
+    {
+      off = gc_clean_step(off);
+      gc_print_stats();
+    }
+    
+  
+}
+
+MU_TEST_SUITE(gc_suite)
+{
+  MU_SUITE_CONFIGURE(&setup,&teardown);
+
+  fixed_pool_init(&int_memory,sizeof(int),100);
+  fixed_pool_init(&ref_memory,sizeof(ref),1); 
+  fixed_pool_init(&hash_memory,sizeof(refhash),1024);
+  fixed_pool_init(&scope_memory,sizeof(scope),10);
+  fixed_pool_init(&stack_memory,sizeof(refstack),1);
+  fixed_pool_init(&kvp_memory,sizeof(key_value),10);
+  dyn_pool_init(&dyn_memory,sizeof(int) * 10);
+  MU_RUN_TEST(_gc_main);
+}
+
 MU_TEST_SUITE(test_suite)
 {
   MU_SUITE_CONFIGURE(&setup,&teardown);
 
   fixed_pool_init(&int_memory,sizeof(int),100);
-  fixed_pool_init(&ref_memory,sizeof(ref),14284700); //10mb of refs
+  fixed_pool_init(&ref_memory,sizeof(ref),1); //10mb of refs
   fixed_pool_init(&hash_memory,sizeof(refhash),1024);
   fixed_pool_init(&scope_memory,sizeof(scope),10);
   fixed_pool_init(&stack_memory,sizeof(refstack),1);
   fixed_pool_init(&kvp_memory,sizeof(key_value),1000000);
   dyn_pool_init(&dyn_memory,sizeof(int) * 1);
 
-  /* MU_RUN_TEST(_dyn_resize); */
-  /* MU_RUN_TEST(_dyn_resize_2); */
+  MU_RUN_TEST(_dyn_resize);
+  MU_RUN_TEST(_dyn_resize_2);
   
-  /* MU_RUN_TEST(_dyn_realloc); */
-  /* MU_RUN_TEST(_ra_basic); */
-  /* MU_RUN_TEST(_ra_complex); */
-  /* MU_RUN_TEST(_stack_basic); */
-  /* MU_RUN_TEST(_stack_complex); */
-  DL("core tests finihsed\n");
+  MU_RUN_TEST(_dyn_realloc);
+  MU_RUN_TEST(_ra_basic);
+  MU_RUN_TEST(_ra_complex);
+  MU_RUN_TEST(_stack_basic);
+  MU_RUN_TEST(_stack_complex);
+  dl("core tests finihsed\n");
  
   MU_RUN_TEST(_vm_a);
 }
@@ -199,9 +232,11 @@ MU_TEST_SUITE(test_suite)
 
 int main(int argc, char *argv[])
 {
-  MU_RUN_SUITE(test_suite);
+  MU_RUN_SUITE(gc_suite);
+
+  /* MU_RUN_SUITE(test_suite); */
   /* MU_RUN_SUITE(refhash_suite); */
-  gc_print_stats();
+
   /* gc_clean_full(); */
   
   MU_REPORT();

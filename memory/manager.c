@@ -20,14 +20,15 @@ void inc_refcount(memref ref)
 {  
   if(!is_value(ref))
     {
-      ref.data.r->refcount++;
+      get_ref(ref.data.i)->refcount++;
     }
 }
 void dec_refcount(memref ref)
 {
   if(!is_value(ref))
     {
-     ref.data.r->refcount--;
+      TL("decreasing refcount on type %i from %i\n", get_ref(ref.data.i)->type, get_ref(ref.data.i)->refcount);
+      get_ref(ref.data.i)->refcount--;
     }
 }  
 
@@ -37,7 +38,7 @@ memref malloc_ref(char type, unsigned targ_offset)
   #if DEBUG
   if(ref_memory->free_offset == -1)
     {
-      printf("!!!!!!!!! CRITICAL EXCEPTION, RAN OUT OF REFERENCES!!!!!\n");
+      /* printf("!!!!!!!!! CRITICAL EXCEPTION, RAN OUT OF REFERENCES!!!!!\n"); */
     }
   #endif
   unsigned ref_off = fixed_pool_alloc(ref_memory);
@@ -49,7 +50,7 @@ memref malloc_ref(char type, unsigned targ_offset)
   r->refcount = 0;
   memref mr;
   mr.type = type;
-  mr.data.r = r;
+  mr.data.i = ref_off;
   TL("malloc_ref exit\n");
   return mr;
 }
@@ -81,38 +82,37 @@ memref malloc_int(int val)
   return v;
 }
 
-/* void free_memref(memref ref, int ref_offset) */
-/* { */
-/*   //assume refcount is already zero */
-/*   switch(ref.data.r->type) */
-/*     { */
-/*     case Array: */
-/*       DL("freeing string..\n"); */
-/*       ra_free(memref); */
-/*       break; */
+void free_ref(ref* ref, int ref_offset)
+{
+  TL("free_ref enter for offset %i type %i\n", ref_offset, ref->type);
+  //assume refcount is already zero
+  switch(ref->type)
+    {
+    case String:
+      DL("freeing string..\n");
+      ra_string_free(ref);
+      break;
+    case Array:
+      DL("freeing array..\n");
+      ra_free(ref);
+      break;
+    case Hash:
+      DL("freeing hash..\n");
+      hash_free(ref);
+      break;
+    case KVP:
+      DL("freeing kvp..\n");
+      fixed_pool_free(kvp_memory, ref->targ_off);
+      break;
+    default:
+      DL("didnt know how to free memory type %i\n", ref->type);
+      return;
+    }
 
-/*     case Array: */
-/*       DL("freeing array..\n"); */
-/*       ra_free(memref); */
-/*       break; */
-/*     case Hash: */
-/*       DL("freeing hash..\n"); */
-/*       hash_free(ref); */
-/*       break; */
-/*     case KVP: */
-/*       DL("freeing kvp..\n"); */
-/*       key_value* kvp = deref(&ref); */
-/*       dec_refcount(kvp->key); */
-/*       dec_refcount(kvp->value); */
-/*       fixed_pool_free(kvp_memory, ref.data.r->targ_off); */
-/*       break; */
-/*     default: */
-/*       DL("didnt know how to free memory type %i\n", ref.type); */
-/*       return; */
-/*     } */
-
-/*   fixed_pool_free(ref_memory,ref_offset); */
-/* } */
+  
+  ref->type = 0;
+  fixed_pool_free(ref_memory,ref_offset);
+}
 
 void* deref(memref* ref)
 {
@@ -122,17 +122,17 @@ void* deref(memref* ref)
       return &ref->data.i;
       break;
     case Hash:
-      return fixed_pool_get(hash_memory, ref->data.r->targ_off);
+      return fixed_pool_get(hash_memory, get_ref(ref->data.i)->targ_off);
       break;
     case KVP:
-      return fixed_pool_get(kvp_memory, ref->data.r->targ_off);
+      return fixed_pool_get(kvp_memory, get_ref(ref->data.i)->targ_off);
     case Array:
     case String:
-      return dyn_pool_get(dyn_memory, ref->data.r->targ_off);
+      return dyn_pool_get(dyn_memory, get_ref(ref->data.i)->targ_off);
     case Scope:
-      return fixed_pool_get(scope_memory, ref->data.r->targ_off);
+      return fixed_pool_get(scope_memory, get_ref(ref->data.i)->targ_off);
     case Stack:
-      return fixed_pool_get(stack_memory, ref->data.r->targ_off);
+      return fixed_pool_get(stack_memory, get_ref(ref->data.i)->targ_off);
     default:
       DL("Dereference failed, invalid type %i\n",ref->type);
       // DL("targ off %i\n",reftarg_off);
@@ -145,14 +145,14 @@ void* deref(memref* ref)
 
 }
 
-void* deref_off(unsigned ref_off)
-{
-  memref m;
-  ref* r = get_ref(ref_off);
-  m.type = r->type;
-  m.data.r = r;
-  return deref(&m);
-}
+/* void* deref_off(unsigned ref_off) */
+/* { */
+/*   memref m; */
+/*   ref* r = get_ref(ref_off); */
+/*   m.type = r->type; */
+/*   m.data.i = ref_off; */
+/*   return deref(&m); */
+/* } */
 
 
 
@@ -226,7 +226,7 @@ int memref_equal(memref x, memref y)
       switch(y.type)
         {
         case String:
-          if(x.data.r->targ_off == y.data.r->targ_off)
+          if(get_ref(x.data.i)->targ_off == get_ref(y.data.i)->targ_off)
             {
               return 1;
             }
@@ -246,7 +246,7 @@ int memref_equal(memref x, memref y)
       if(x.type >= Hash && y.type >= Hash && x.type == y.type)
         {
           DL("Default reference equality used for type %i\n", x.type);
-          return x.data.r->targ_off == y.data.r->targ_off;
+          return get_ref(x.data.i)->targ_off == get_ref(y.data.i)->targ_off;
         }
       else
         {          

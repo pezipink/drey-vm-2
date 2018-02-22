@@ -33,10 +33,8 @@ typedef struct memref
   char type;
   union
   {
-    struct ref* r;
     int i;
     double d;
-
   } data;
 } memref, stringref;
 
@@ -60,7 +58,7 @@ memref malloc_ref(char type, unsigned targ_offset);
 memref malloc_kvp(memref key, memref val, memref next);
 memref malloc_int(int val);
 
-void free_memref(memref key, int mem_ref);
+void free_ref(ref* ref, int ref_offset);
 
 inline void* deref(memref* ref);
 void* deref_off(unsigned offset);

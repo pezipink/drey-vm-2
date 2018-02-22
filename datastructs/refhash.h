@@ -28,6 +28,6 @@ void hash_remove(memref hash, memref key);
 
 int hash_count(memref hash);
 
-void hash_free(memref hash);
+void hash_free(ref* hash_ref);
 
 #endif

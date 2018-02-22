@@ -3,7 +3,7 @@
 #include "..\memory\manager.h"
 #include "..\memory\fixed_pool.h"
 
-memref ra_init(unsigned element_size, unsigned element_capacity)
+memref ra_init_raw(unsigned element_size, unsigned element_capacity, unsigned int type)
 {  
   TL("ra_init entry\n");
   TL("requested block size is %i\n",element_size * element_capacity + (sizeof(refarray)-sizeof(int)));
@@ -14,16 +14,21 @@ memref ra_init(unsigned element_size, unsigned element_capacity)
   ra->element_capacity = element_capacity;
   ra->element_count = 0;
   TL("ra initialized at offset %i ele count %i\n", ra_off, ra->element_count);
-  memref ra_ref = malloc_ref(Array, ra_off);
+  memref ra_ref = malloc_ref(type, ra_off);
   TL("ra_init exit\n");
   return ra_ref;
+}
+
+memref ra_init(unsigned element_size, unsigned element_capacity)
+{  
+  return ra_init_raw(element_size, element_capacity, Array);
 }
 
 
 void ra_consume_capacity(memref ra_ref)
 {
   //not for general use, used in hash table imp
-  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,ra_ref.data.r->targ_off);
+  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(ra_ref.data.i)->targ_off);
   ra->element_count = ra->element_capacity;
 }
 
@@ -31,23 +36,22 @@ void ra_consume_capacity(memref ra_ref)
 memref ra_init_str(char* str)
 {
   int len = strlen(str);
-  memref r = ra_init(sizeof(char),len);
-  r.type = String;
+  memref r = ra_init_raw(sizeof(char),len, String);
   ra_consume_capacity(r);
-  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,r.data.r->targ_off);
+  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(r.data.i)->targ_off);
   memcpy(&ra->data,str,len);
   return r;  
 }
 
 unsigned ra_count(memref ra_ref)
 {
-  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,ra_ref.data.r->targ_off);
+  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(ra_ref.data.i)->targ_off);
   return ra->element_count;
 }
 
 void* ra_nth(memref ra_ref, unsigned nth)
 {
-  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,ra_ref.data.r->targ_off);
+  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(ra_ref.data.i)->targ_off);
   #if DEBUG
   if(nth >= ra->element_count)
     {
@@ -77,7 +81,7 @@ memref ra_nth_memref(memref ra_ref, unsigned nth)
 void ra_set(memref ra_ref, unsigned nth, void* new_element)
 {
   TL("ra_set enter\n");
-  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,ra_ref.data.r->targ_off);
+  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(ra_ref.data.i)->targ_off);
   #if DEBUG
   if(nth >= ra->element_count)
     {
@@ -94,7 +98,7 @@ void ra_set(memref ra_ref, unsigned nth, void* new_element)
 
 void ra_set_memref(memref ra_ref, unsigned nth, memref* new_element)
 {
-  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,ra_ref.data.r->targ_off);
+  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(ra_ref.data.i)->targ_off);
   #if DEBUG
   if(nth >= ra->element_count)
     {
@@ -105,7 +109,7 @@ void ra_set_memref(memref ra_ref, unsigned nth, memref* new_element)
   memref* ref = (memref*)&ra->data + (nth * ra->element_size);
   if(ref != 0 && ref->type > 3)
     {
-      ref->data.r->refcount--;
+      get_ref(ref->data.i)->refcount--;
     }
   //(*new_element)->refcount++;
   memcpy((int)ref,(int)new_element,ra->element_size);
@@ -114,7 +118,7 @@ void ra_set_memref(memref ra_ref, unsigned nth, memref* new_element)
 void ra_append(memref ra_ref, void* new_element)
 {
   TL("ra_append enter\n");
-  int targ_off = ra_ref.data.r->targ_off;
+  int targ_off = get_ref(ra_ref.data.i)->targ_off;
   refarray* ra = (refarray*)dyn_pool_get(dyn_memory,targ_off);
   TL("ref array at %p\n",ra);
   int memSize = ra->element_size * ra->element_capacity + (sizeof(refarray) - sizeof(int));
@@ -132,7 +136,7 @@ void ra_append(memref ra_ref, void* new_element)
      targ_off = dyn_pool_realloc(&dyn_memory,targ_off,newCapacity * ra->element_size + (sizeof(refarray) - sizeof(int)));
      //update the ref pointer incase the memory moved
      TL("now %i\n",targ_off);
-     ra_ref.data.r->targ_off = targ_off;
+     get_ref(ra_ref.data.i)->targ_off = targ_off;
      ra = (refarray*)dyn_pool_get(dyn_memory,targ_off);
      ra->element_capacity = newCapacity;
    }
@@ -178,11 +182,64 @@ void ra_wl(memref ra_ref)
 
 void ra_w(memref ra_ref)
 {
-  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,ra_ref.data.r->targ_off);
+  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(ra_ref.data.i)->targ_off);
 
   char* data = (char*)&ra->data;
   for(int i = 0; i < ra->element_count; i++)
     {
       putchar(*data++);
     }
+}
+
+void ra_string_free(ref* ra_ref)
+{
+  int targ_off = ra_ref->targ_off;
+  dyn_pool_free(dyn_memory, targ_off);
+}
+
+
+void ra_free(ref* ra_ref)
+{
+  TL("ra_free enter\n");
+  int targ_off = ra_ref->targ_off;
+  refarray* ra = dyn_pool_get(dyn_memory, targ_off);
+
+  // for any reference items, decrease their refcount.
+
+  //special case here for KVP items, since they can only appear
+  //in an RA and form a linked list, also traverse that and adjust
+  //the refcounts.
+  int max = ra->element_count;
+  memref* data = (memref*)&ra->data;
+  for(int i = 0; i < max; i++)
+    {
+      TL("!!TESTTING type %i\n", data->type);
+      if(data->type == KVP)
+        {
+          dec_refcount(*data);
+          TL("KVP\n");
+          key_value* kvp = deref(data);
+          while(1)
+            {
+              dec_refcount(kvp->key);
+              dec_refcount(kvp->val);
+              if(kvp->next.type != 0)
+                {
+                  kvp = deref(&kvp->next);
+                }
+              else
+                {
+                  break;
+                }
+            }
+        }
+      else if(!is_value(*data))
+        {
+          dec_refcount(*data);
+        }
+      data++;
+    }  
+    
+  dyn_pool_free(dyn_memory, targ_off);
+  TL("ra_free exit\n");
 }

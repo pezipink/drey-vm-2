@@ -212,7 +212,7 @@ void dyn_pool_init(MemoryPool_Dynamic** owner, unsigned size)
   free->size = size;
   free->next_offset = 0xFFFFFFFF;
   pool->free_offset = 0;
-  // do not include the size of the data void pounsigneder 
+  // do not include the size of the data void pointer 
   pool->total_size = size + sizeof(MemoryPool_Dynamic) - sizeof(unsigned);
   pool->owner = owner;
   *owner = pool;
