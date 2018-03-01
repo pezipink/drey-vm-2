@@ -26,14 +26,14 @@ memref* stack_peek_ref(memref stack_ref)
   return (memref*)fixed_pool_get(stack->pool,stack->head_offset);
 }
 
-
 memref stack_pop(memref stack_ref)
 {
   TL("stack_pop entry\n");
   refstack* stack = deref(&stack_ref);
+  TL("offset currently %i\n", stack->head_offset);
   //  assert(stack->head_offset > 0);
   #if DEBUG
-  if(stack->head_offset == 0xFFFFFFFF)
+  if(stack->head_offset < 0x0)
     {
       DL("!!!attempted to pop stack with no values !!!!\n");
     }
@@ -41,9 +41,9 @@ memref stack_pop(memref stack_ref)
   memref ref = *(memref*)fixed_pool_get(stack->pool,stack->head_offset);
   //TL("popping stack with ref offset of %i",*ref);  
   //memref* ref = (memref*)fixed_pool_get(ref_memory,*ref_off);
-  dec_refcount(ref);
   fixed_pool_free(stack->pool,stack->head_offset);
   stack->head_offset -= sizeof(memref);
+  TL("offset now %i\n", stack->head_offset);
   TL("stack_pop exit\n");
   return ref;
 }
@@ -52,13 +52,19 @@ void stack_push(memref stack_ref, memref ref)
 {
   TL("stack_push enter\n");
   refstack* stack = deref(&stack_ref);
-  inc_refcount(ref);
   int offset = fixed_pool_alloc(stack->pool);
   memref* ref_off = (memref*)fixed_pool_get(stack->pool,offset);
+  TL("pushed to offset %i\n", offset);
   stack->head_offset = offset;
   *ref_off = ref;
   TL("stack_push exit\n");
  }
+
+int stack_head_offset(memref stack_ref)
+{
+ refstack* stack = deref(&stack_ref);
+ return stack->head_offset;
+}
 
 /* void stack_push_int(refstack* stack, int value) */
 /* { */

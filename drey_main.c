@@ -1,253 +1,201 @@
-#include <stdio.h>
+#include <winsock2.h>
 #include <windows.h>
+#include <stdio.h>
 #include "memory\manager.h"
 #include "datastructs\refhash.h"
+#include "datastructs\refstack.h"
 #include "global.h"
-#include <time.h>
-//void drawMemory(HANDLE hNewScreenBuffer, MemoryPool* memory)
-//{
-  /* SMALL_RECT srctReadRect;  */
-  /* SMALL_RECT srctWriteRect; */
-  /* CHAR_INFO chiBuffer[24*96]; // [8][64];  */
-  /* COORD coordBufSize;  */
-  /* COORD coordBufCoord;  */
-  /* BOOL fSuccess;  */
-
-  /* coordBufSize.Y = 24;  */
-  /* coordBufSize.X = 96; */
-    
-  /* coordBufCoord.X = 0;  */
-  /* coordBufCoord.Y = 0;  */
-    
-  /* // Set the destination rectangle.  */
-    
-  /* srctWriteRect.Top = 2;    // top lt: row 10, col 0  */
-  /* srctWriteRect.Left = 1;  */
-  /* srctWriteRect.Bottom = 24; // bot. rt: row 11, col 79  */
-  /* srctWriteRect.Right = 96;  */
-  /* for(int i = 0; i < (24*96); i++) */
-  /*   { */
-  /*     chiBuffer[i].Char.AsciiChar = ' '; */
-  /*     chiBuffer[i].Attributes = 0; */
-  /*   } */
-    
-  /* if(memory->freeBlock == NULL) */
-  /*   { */
-  /*     printf("here!"); */
-  /*     for(int i = 0; i < (24*96); i++) */
-  /*       { */
-  /*         chiBuffer[i].Char.AsciiChar = ' ';     */
-  /*         chiBuffer[i].Attributes = BACKGROUND_RED; */
-  /*       } */
-  /*   } */
-  /* else */
-  /*   { */
-  /*     //      printf("not null\n"); */
-  /*     FreeBlock* current = memory->freeBlock; */
-  /*     int start = (int)&memory->data; */
-  /*     //      printf("start at %i first free block at %i\n",start,(int)current); */
-  /*     int index = 0; */
-  /*     if((int)current != start) */
-  /*       { */
-           
-  /*         //print initial alloc special case */
-  /*         int gap = (int)current - start; */
-  /*         //  printf("start alloc %i\n",gap); */
-  /*         while(index < gap) */
-  /*           { */
-  /*             chiBuffer[index].Char.AsciiChar = ' ';     */
-  /*             chiBuffer[index].Attributes = BACKGROUND_RED; */
-  /*             index++; */
-  /*           }                         */
-  /*       } */
-  /*     //      printf("!\n"); */
-  /*     //print the current free block */
-  /*     while(TRUE) */
-  /*       { */
-  /*         printf("loop\n"); */
-  /*         int targ = index + current->size; */
-  /*         printf("targ %i\n",targ); */
-  /*         while(index < targ) */
-  /*           { */
-  /*             chiBuffer[index].Attributes = BACKGROUND_GREEN; */
-  /*             index++; */
-  /*           } */
-  /*         printf("loop2\n"); */
-  /*         if(current->next == NULL) */
-  /*           { */
-  /*             printf("breaking\n"); */
-  /*             break; */
-  /*           } */
-  /*         else */
-  /*           { */
-                            
-  /*             targ = index + (int)current->next - (int)current - current->size; */
-  /*             /\* printf("! %i - %i + %i", (int)current->next, (int)current, current->size); *\/ */
-  /*             printf("targ %i\n",targ);  */
-  /*             while(index < targ) */
-  /*               { */
-  /*                 chiBuffer[index].Attributes = BACKGROUND_RED; */
-  /*                 index++; */
-  /*               }                 */
-
-  /*             printf("setting next\n"); */
-  /*             current = current->next; */
-  /*           } */
-  /*       } */
-  /*     //print the rest as allocated */
-  /*         printf("index now %i\n",index); */
-  /*     while(index < 24*96) */
-  /*       { */
-  /*         chiBuffer[index].Attributes = BACKGROUND_RED; */
-  /*         index++;            */
-  /*       } */
-  /*   } */
-        
-  /* printf("printing HERE FIAL\n"); */
-  /* // Copy from the temporary buffer to the new screen buffer.  */
-    
-  /* fSuccess = WriteConsoleOutput( */
-  /*                               hNewScreenBuffer, // screen buffer to write to */
-  /*                               chiBuffer,        // buffer to copy from */
-  /*                               coordBufSize,     // col-row size of chiBuffer */
-  /*                               coordBufCoord,    // top left src cell in chiBuffer */
-  /*                               &srctWriteRect);  // dest. screen buffer rectangle */
-  /* if (! fSuccess) */
-  /*   { */
-  /*     printf("WriteConsoleOutput failed - (%d)\n", GetLastError()); */
-  /*   } *
-  /* printf("exit"); */
-//}
+#include "zmq.h"
+#include "zhelpers.h"
+#include "threads\mediator.h"
 
 
-
-
-
-    
-    
-
-int main()
+int main(int argc, char *argv[])
 {
   printf("entry\n");
 
   TL("test%i\n", 0);
   int memory = 0;
   
-  fixed_pool_init(&int_memory,sizeof(int),1024);
-  fixed_pool_init(&ref_memory,sizeof(memref),1024);
-  fixed_pool_init(&hash_memory,sizeof(refhash),1024);
-  fixed_pool_init(&kvp_memory,sizeof(key_value),2048);
-  dyn_pool_init(&dyn_memory,sizeof(int) * 1024);
+  fixed_pool_init(&ref_memory,sizeof(ref),1); //10mb of refs
+  fixed_pool_init(&hash_memory,sizeof(refhash),1);
+  fixed_pool_init(&scope_memory,sizeof(scope),1);
+  fixed_pool_init(&func_memory,sizeof(function),1);
+  fixed_pool_init(&stack_memory,sizeof(refstack),1);
+  fixed_pool_init(&kvp_memory,sizeof(key_value),1);
+  dyn_pool_init(&dyn_memory,sizeof(int) * 1);
+  fixed_pool_init(&go_memory,sizeof(gameobject),1);
+  fixed_pool_init(&loc_memory,sizeof(location),10);
+  fixed_pool_init(&loc_ref_memory,sizeof(locationref),10);
 
-  memref* h = hash_init(0);
-  memref* i = malloc_int(42);
-  memref* j = malloc_int(58);
-
-  hash_set(h,i,j);
-
-  memref* r = hash_get(h, i);
-  int* x = (int*)deref(r);
-  TL("%i\n",*x);
   
   
-/*   clock_t t; */
-/*     t = clock(); */
-/*         t = clock() - t; */
-/*     double time_taken = ((double)t)/CLOCKS_PER_SEC; // in seconds */
- 
-/*     printf("fun() took %f seconds to execute \n", time_taken); */
-/* t = clock(); */
+  // Prepare our context and sockets
+  printf("start\n");
+  void* context = zmq_ctx_new ();    
 
-    /* for(int i =0; i < 10000000; i++) */
-    /* { */
-    /*   dyn_pool_alloc(dyn_memory, 1000000); */
-    /*   //      fixed_pool_alloc(int_memory);  */
-    /* } */
-    /* t = clock() - t; */
-    /*  time_taken = ((double)t)/CLOCKS_PER_SEC; // in seconds */
- 
-    /* printf("fun() took %f seconds to execute \n", time_taken); */
-
-  /* int* y = (int*)fixed_pool_get(int_memory,x); */
-  /* *y = 42; */
+  printf("creating root inproc socket in main thread\n");
+  void* ip_root = zmq_socket(context, ZMQ_PAIR);
+  zmq_bind(ip_root, "inproc://root");
   
+  HANDLE thread = CreateThread(NULL, 0, mediator_thread, context, 0, NULL);
+  
+  //wait for mediator signal
+  char* str = s_recv(ip_root);
+  printf("root received signal, continuing\n");
+  free(str);
+  void *tcp_router = zmq_socket (context, ZMQ_ROUTER);
+  printf("binding tcp router socket\n");  
+  zmq_bind (tcp_router, "tcp://*:5560");
+  printf("socket bound\n");
 
+  zmq_pollitem_t items [] = {
+     { ip_root,   0, ZMQ_POLLIN, 0 },
+     { tcp_router,   0, ZMQ_POLLIN, 0 },
+  };
+
+    
+  while(1)
+    {
       
-  /* fixed_pool_init(&ref_memory,sizeof(memref),1024); */
-  /* fixed_pool_init(&go_memory,sizeof(go),1024); */
- 
+      Sleep(10);
+      //      printf("root: looking for message from mediator..\n");
+      zmq_poll (items, 2, 10);
+      if (items [0].revents & ZMQ_POLLIN)
+        {
+          //this is an internal message from the mediator thread.
+          //forward it on to the router.
+          bool more = false;
+          size_t optLen = sizeof(more);
+          while(1)
+            {
+              zmq_msg_t msg;
+              zmq_msg_init(&msg);
+              zmq_msg_recv(&msg, ip_root, 0);          
+              zmq_msg_t cpy;
+              zmq_msg_init(&cpy);
+              zmq_msg_copy(&cpy, &msg);
+              zmq_getsockopt(ip_root,ZMQ_RCVMORE,&more, &optLen);
+              zmq_msg_close(&msg);              
+              if(more)
+                {
+                  zmq_msg_send(&cpy, tcp_router, ZMQ_SNDMORE);
+                }
+              else
+                {
+                  zmq_msg_send(&cpy, tcp_router, 0);
+                  break;
+                }
+            }         
 
-  /* printf("herehere"); */
-  /* int off1 = dyn_pool_alloc_set(dyn_memory, 128, 0); */
-  /* int off2 = dyn_pool_alloc_set(dyn_memory, 128, 1); */
-  /* dyn_pool_free(dyn_memory, off1); */
-  /* int  off3 = dyn_pool_alloc_set(dyn_memory, 64, 2); */
-  /* int  off4 = dyn_pool_alloc_set(dyn_memory, 60, 3); */
-  /* int  off5 = dyn_pool_alloc_set(dyn_memory, 64, 4); */
-  /* dyn_pool_free(dyn_memory, off2); */
-  /* int  off6 = dyn_pool_alloc_set(dyn_memory, 64, 5); */
-  /* HANDLE hStdout, hStdin,hNewScreenBuffer;  */
+        }
+      
+      if(items[1].revents & ZMQ_POLLIN)
+        {
+          // incoming message from a client
+          //a valid message is formed of at least 2 frames
+          //the first being the client / socket identifier
+          //and the second being the message type.
+          //some message types have a third frame.
+          //and no messages have more.
 
- 
-  /*   // Get a handle to the STDOUT screen buffer to copy from and  */
-  /*   // create a new screen buffer to copy to.  */
+          //here we validate the above and forward copies onto the
+          //mediator thread.
+          zmq_msg_t msg_identifier;
+          zmq_msg_t msg_type;
+          zmq_msg_t msg_data;
+          int size = 0;
+          zmq_msg_init(&msg_identifier);
+          size = zmq_msg_recv(&msg_identifier,tcp_router,0);          
+          //                   printf("root: external message of %i size\n", size);
+          char* buffer = malloc(size+1);
+          memset(buffer,0,size+1);
+          memcpy(buffer,zmq_msg_data(&msg_identifier),size);
+          //          printf("root: identifier was ");
+          //          printf(buffer);
+          //          printf("\n");
+          free(buffer);
+          bool invalid = false;
+          bool more = false;
+          bool hasData = false;
+          bool hasType = false;
+          size_t optLen = sizeof(more);
+          zmq_getsockopt(tcp_router,ZMQ_RCVMORE,&more, &optLen);
+          if(more)
+            {
+              zmq_msg_init(&msg_type);
+              size = zmq_msg_recv(&msg_type,tcp_router,0);
+              hasType = true;
+              char* data = zmq_msg_data(&msg_type);
+              //printf("root: second frame was %i bytes with value %i", size, *data);
+              if(*data == Data || *data == Debug)
+                {
+                  zmq_msg_init(&msg_data);
+                  size = zmq_msg_recv(&msg_data,tcp_router,0);
+                  printf("root: third frame was %i bytes", size);
+                  hasData = true;
+                }
+              else if(*data < 0 || *data > 6)
+                {
+                  invalid = true;
+                }
+            }
+          else
+            {
+              invalid = true;
+            }
+              
+          
+          //there should be no more data, otherwise its a funky message
+          zmq_getsockopt(tcp_router,ZMQ_RCVMORE,&more, &optLen);
+          if(more)
+            {
+              while(more)
+                {
+                  printf("root: throwing away another frame..\n");
+                  zmq_msg_t msg_temp;
+                  zmq_msg_init(&msg_temp);
+                  size = zmq_msg_recv(&msg_temp,tcp_router,0);
+                  zmq_msg_close(&msg_temp);
+                  zmq_getsockopt(tcp_router,ZMQ_RCVMORE,&more, &optLen);
+                }
+            }
+          else if(!invalid)
+            {
+              //message was good, forward them on
+              zmq_msg_t msg_identifier_copy;
+              zmq_msg_init(&msg_identifier_copy);
+              zmq_msg_copy(&msg_identifier_copy, &msg_identifier);
+              zmq_msg_send(&msg_identifier_copy, ip_root, ZMQ_SNDMORE);
+              zmq_msg_t msg_type_copy;
+              zmq_msg_init(&msg_type_copy);
+              zmq_msg_copy(&msg_type_copy, &msg_type);
+              zmq_msg_send(&msg_type_copy, ip_root, hasData ? ZMQ_SNDMORE : 0);
+              if(hasData)
+                {
+                  zmq_msg_t msg_data_copy;
+                  zmq_msg_init(&msg_data_copy);
+                  zmq_msg_copy(&msg_data_copy, &msg_data);
+                  zmq_msg_send(&msg_data_copy, ip_root, 0);
+                }
+              
+            }
+          
+          if(hasType)
+            {
+              zmq_msg_close(&msg_type);
+            }
 
-  /* hStdout = GetStdHandle(STD_OUTPUT_HANDLE); */
-  /* hStdin = GetStdHandle(STD_INPUT_HANDLE);  */
-  /* hNewScreenBuffer = CreateConsoleScreenBuffer(  */
-  /*      GENERIC_READ |           // read/write access  */
-  /*      GENERIC_WRITE,  */
-  /*      FILE_SHARE_READ |  */
-  /*      FILE_SHARE_WRITE,        // shared  */
-  /*      NULL,                    // default security attributes  */
-  /*      CONSOLE_TEXTMODE_BUFFER, // must be TEXTMODE  */
-  /*      NULL);                   // reserved; must be NULL  */
-  /*   if (hStdout == INVALID_HANDLE_VALUE ||  */
-  /*           hNewScreenBuffer == INVALID_HANDLE_VALUE)  */
-  /*   { */
-  /*       printf("CreateConsoleScreenBuffer failed - (%d)\n", GetLastError());  */
-  /*       return 1; */
-  /*   } */
+          if(hasData)
+            {
+              zmq_msg_close(&msg_data);
+            }          
+          
+          zmq_msg_close(&msg_identifier);
+        }
 
-  /*   // Make the new screen buffer the active screen buffer.  */
-  /*   if (! SetConsoleActiveScreenBuffer(hNewScreenBuffer) )  */
-  /*   { */
-  /*       printf("SetConsoleActiveScreenBuffer failed - (%d)\n", GetLastError());  */
-  /*       return 1; */
-  /*   } */
-
-  /*   int count = 5; */
-  /*   COORD cursorPosition; */
-  /*   cursorPosition.Y = 25; */
-  /*   cursorPosition.X = 0; */
-  /*   char input[255]; */
-  /*   char output[255]; */
-  /*   for(int i = 0; i<255; i++) */
-  /*     { */
-  /*       input[i] = ' '; */
-  /*       output[i] = ' '; */
-  /*     } */
-  /*   int read = 0; */
-  /*   while(count > 0) */
-  /*     { */
-  /*       drawMemory(hNewScreenBuffer, memory); */
-  /*       SetConsoleCursorPosition(hNewScreenBuffer, cursorPosition); */
-  /*       WriteConsoleOutputCharacter(hNewScreenBuffer, output,255,cursorPosition, &read); */
-  /*       ReadFile(hStdin, input, 255, &read, NULL); */
-  /*       if(input[0] == 'a') */
-  /*         { */
-            
-  /*           allocSet(atoi((char*)input+1),2,memory);             */
-  /*         } */
-  /*     } */
-
-  /*   // Restore the original active screen buffer.  */
-
-  /*   if (! SetConsoleActiveScreenBuffer(hStdout)) */
-  /*   { */
-  /*       printf("SetConsoleActiveScreenBuffer failed - (%d)\n", GetLastError()); */
-  /*       return 1; */
-  /*   } */
+          
+    }
   printf("exit");
-  getchar();
+  return 0;
 }

@@ -112,6 +112,43 @@ MU_TEST(_ra_basic)
 
 }
 
+MU_TEST(_ra_remove)
+{
+  memref ra = ra_init(sizeof(int),4);
+  ra_consume_capacity(ra);
+  mu_check(ra_count(ra) == 4);
+  int val = 42;
+  int val2 = 58;
+  ra_set(ra,0,&val);
+  ra_set(ra,1,&val2);
+  mu_check(ra_nth_int(ra,0) == val);
+  mu_check(ra_nth_int(ra,1) == val2);
+  ra_remove(ra,0,1);
+  mu_check(ra_count(ra) == 3);
+  mu_check(ra_nth_int(ra,0) == val2);
+}
+
+MU_TEST(_ra_split)
+{
+  memref ra = ra_init(sizeof(int),4);
+  ra_consume_capacity(ra);
+  mu_check(ra_count(ra) == 4);
+  int val = 42;
+  int val2 = 58;
+  ra_set(ra,0,&val);
+  ra_set(ra,1,&val2);
+  ra_set(ra,3,&val2);
+  mu_check(ra_nth_int(ra,0) == val);
+  mu_check(ra_nth_int(ra,1) == val2);
+  mu_check(ra_nth_int(ra,3) == val2);
+  memref ra2 = ra_split_bottom(ra, 2);
+  mu_check(ra_count(ra) == 2);
+  mu_check(ra_count(ra2) == 2);
+  mu_check(ra_nth_int(ra2,0) == val);
+  mu_check(ra_nth_int(ra2,1) == val2);
+  
+}
+
 MU_TEST(_ra_complex)
 {
   /* memref ra = ra_init(4,4); */
@@ -193,12 +230,16 @@ MU_TEST_SUITE(gc_suite)
 {
   MU_SUITE_CONFIGURE(&setup,&teardown);
 
-  fixed_pool_init(&int_memory,sizeof(int),100);
+  //  fixed_pool_init(&int_memory,sizeof(int),100);
   fixed_pool_init(&ref_memory,sizeof(ref),1); 
   fixed_pool_init(&hash_memory,sizeof(refhash),1024);
   fixed_pool_init(&scope_memory,sizeof(scope),10);
   fixed_pool_init(&stack_memory,sizeof(refstack),1);
   fixed_pool_init(&kvp_memory,sizeof(key_value),10);
+  fixed_pool_init(&go_memory,sizeof(gameobject),10);
+  fixed_pool_init(&loc_memory,sizeof(location),10);
+  fixed_pool_init(&loc_ref_memory,sizeof(locationref),10);
+  
   dyn_pool_init(&dyn_memory,sizeof(int) * 10);
   MU_RUN_TEST(_gc_main);
 }
@@ -207,32 +248,39 @@ MU_TEST_SUITE(test_suite)
 {
   MU_SUITE_CONFIGURE(&setup,&teardown);
 
-  fixed_pool_init(&int_memory,sizeof(int),100);
+  //  fixed_pool_init(&int_memory,sizeof(int),100);
   fixed_pool_init(&ref_memory,sizeof(ref),1); //10mb of refs
   fixed_pool_init(&hash_memory,sizeof(refhash),1024);
   fixed_pool_init(&scope_memory,sizeof(scope),10);
+  fixed_pool_init(&func_memory,sizeof(function),10);
+
   fixed_pool_init(&stack_memory,sizeof(refstack),1);
   fixed_pool_init(&kvp_memory,sizeof(key_value),1000000);
   dyn_pool_init(&dyn_memory,sizeof(int) * 1);
+  fixed_pool_init(&go_memory,sizeof(gameobject),10);
+  fixed_pool_init(&loc_memory,sizeof(location),10);
+  fixed_pool_init(&loc_ref_memory,sizeof(locationref),10);
 
-  MU_RUN_TEST(_dyn_resize);
-  MU_RUN_TEST(_dyn_resize_2);
+  /* MU_RUN_TEST(_dyn_resize); */
+  /* MU_RUN_TEST(_dyn_resize_2); */
   
-  MU_RUN_TEST(_dyn_realloc);
+  /* MU_RUN_TEST(_dyn_realloc); */
   /* MU_RUN_TEST(_ra_basic); */
+  /* MU_RUN_TEST(_ra_remove); */
+  MU_RUN_TEST(_ra_split);
   /* MU_RUN_TEST(_ra_complex); */
   /* MU_RUN_TEST(_stack_basic); */
   /* MU_RUN_TEST(_stack_complex); */
   DL("core tests finihsed\n");
  
-  MU_RUN_TEST(_vm_a);
+     MU_RUN_TEST(_vm_a);
 }
 
 
 
 int main(int argc, char *argv[])
 {
-  MU_RUN_SUITE(gc_suite);
+  /* MU_RUN_SUITE(gc_suite); */
 
   MU_RUN_SUITE(test_suite);
   /* MU_RUN_SUITE(refhash_suite); */

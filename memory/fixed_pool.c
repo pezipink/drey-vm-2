@@ -19,6 +19,7 @@ unsigned fixed_pool_alloc(MemoryPool_Fixed* pool)
     {      
       unsigned oldCount = pool->element_count;
       unsigned newCount = oldCount * 2;
+      unsigned diff = newCount - oldCount;
       unsigned newElementSize = (newCount * pool->element_size);
       unsigned newSize =  newElementSize + sizeof(MemoryPool_Fixed);      
       TL("out of memory for pool at %p, reallocating as size %i\n", pool, newSize);
@@ -31,10 +32,11 @@ unsigned fixed_pool_alloc(MemoryPool_Fixed* pool)
       TL("offset now %i\n", pool->free_offset);
       unsigned address = (int)&pool->data + offset;
       //setup linked list in the new block
+      memset((void*)address, 0,diff * pool->element_size);
       for(unsigned i = oldCount; i < newCount - 1; i++)
         {          
           offset += pool->element_size;
-          *(unsigned*)address = offset;
+          *(unsigned*)address = offset;          
           address += pool->element_size;
         }
       *(unsigned*)address = -1;

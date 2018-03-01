@@ -43,10 +43,32 @@ memref ra_init_str(char* str)
   return r;  
 }
 
+memref ra_init_str_raw(char* str, int len)
+{
+  memref r = ra_init_raw(sizeof(char),len, String);
+  ra_consume_capacity(r);
+  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(r.data.i)->targ_off);
+  memcpy(&ra->data,str,len);
+  return r;  
+}
+
 unsigned ra_count(memref ra_ref)
 {
   refarray* ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(ra_ref.data.i)->targ_off);
+  TL("ra count is %i\n", ra->element_count);
   return ra->element_count;
+}
+
+void* ra_data(memref ra_ref)
+{
+  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(ra_ref.data.i)->targ_off);
+  return &ra->data;
+}
+
+void ra_dec_count(memref ra_ref)
+{
+  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(ra_ref.data.i)->targ_off);
+  ra->element_count--;
 }
 
 void* ra_nth(memref ra_ref, unsigned nth)
@@ -55,7 +77,7 @@ void* ra_nth(memref ra_ref, unsigned nth)
   #if DEBUG
   if(nth >= ra->element_count)
     {
-      DL("Ciritical error - array out of bounds. nth is %i but count is %i\n", nth, ra->element_count);
+      DL("Critical error - array out of bounds. nth is %i but count is %i\n", nth, ra->element_count);
       return 0;
     }
   #endif
@@ -95,6 +117,98 @@ void ra_set(memref ra_ref, unsigned nth, void* new_element)
   TL("ra_set exit\n");
 }
 
+void ra_remove(memref ra_ref, unsigned nth, unsigned amount)
+{
+  TL("ra_remove enter\n");
+  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(ra_ref.data.i)->targ_off);
+  #if DEBUG
+  if(nth >= ra->element_count)
+    {
+      DIE("Ciritical error - array out of bounds. nth is %i but count is %i\n", nth, ra->element_count);
+      return;
+    }
+  if(nth + amount >= ra->element_count)
+    {
+      DIE("Ciritical error - array out of bounds. nth + amount is %i but count is %i\n", nth + amount, ra->element_count);
+      return;
+
+    }
+  if(amount == 0)
+    {
+      DIE("Critical error - amount cannot be zero in ra_remove");
+    }
+  #endif
+
+  //copy the elements in front down and change the element count to suit.
+  int targetAddress = (int)&ra->data + (nth * ra->element_size);
+  int sourceAddress = (int)&ra->data + ((nth + amount) * ra->element_size);
+  memcpy(targetAddress,sourceAddress,amount * ra->element_size);
+  ra->element_count -= amount;
+  
+}
+
+memref ra_split_top(memref ra_ref, unsigned nth)
+{
+  TL("ra_split enter\n");
+  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(ra_ref.data.i)->targ_off);
+  #if DEBUG
+  if(nth >= ra->element_count)
+    {
+      DIE("Ciritical error - array out of bounds. nth is %i but count is %i\n", nth, ra->element_count);
+
+    }
+  if(nth == 0)
+    {
+      DIE("Critical error - cannot split at index zero\n");
+    }
+  #endif
+
+  int splitAddress = (int)&ra->data + (nth * ra->element_size);
+
+  int newCount = ra->element_count - nth;
+  TL("new array count is %i\n", newCount);
+  memref newRaRef = ra_init_raw(ra->element_size,newCount,ra_ref.type);
+  //deref again incase pool was moved
+  ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(ra_ref.data.i)->targ_off);
+  ra_consume_capacity(newRaRef);
+  refarray* ra2 = deref(&newRaRef);
+  int targetAddress = (int)&ra2->data;
+  memcpy(targetAddress,splitAddress,newCount * ra->element_size);
+  ra->element_count -= newCount;
+  TL("old array count is %i\n", ra->element_count);
+  return newRaRef;
+}
+memref ra_split_bottom(memref ra_ref, unsigned nth)
+{
+  TL("ra_split_bottom enter\n");
+  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(ra_ref.data.i)->targ_off);
+  #if DEBUG
+  if(nth >= ra->element_count)
+    {
+      DIE("Ciritical error - array out of bounds. nth is %i but count is %i\n", nth, ra->element_count);
+
+    }
+  if(nth == 0)
+    {
+      DIE("Critical error - cannot split at index zero\n");
+    }
+  #endif
+
+
+  int newCount = ra->element_count - nth;
+  TL("new array count is %i\n", newCount);
+  memref newRaRef = ra_init_raw(ra->element_size,newCount,ra_ref.type);
+  //deref again incase pool was moved
+  ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(ra_ref.data.i)->targ_off);
+  ra_consume_capacity(newRaRef);
+  refarray* ra2 = deref(&newRaRef);
+  int targetAddress = (int)&ra2->data;
+  memcpy(targetAddress,&ra->data,newCount * ra->element_size);
+  ra_remove(ra_ref,0,nth);
+  
+  TL("old array count is %i\n", ra->element_count);
+  return newRaRef;
+}
 
 void ra_set_memref(memref ra_ref, unsigned nth, memref* new_element)
 {
@@ -106,11 +220,7 @@ void ra_set_memref(memref ra_ref, unsigned nth, memref* new_element)
       return;
     }
   #endif
-  memref* ref = (memref*)&ra->data + (nth * ra->element_size);
-  if(ref != 0 && ref->type > 3)
-    {
-      get_ref(ref->data.i)->refcount--;
-    }
+  memref* ref = (memref*)&ra->data + nth;
   //(*new_element)->refcount++;
   memcpy((int)ref,(int)new_element,ra->element_size);
 }
@@ -152,7 +262,6 @@ void ra_append(memref ra_ref, void* new_element)
 void ra_append_memref(memref ra_ref, memref new_element)
 {
   ra_append(ra_ref, &new_element);
-  inc_refcount(new_element);
 }
 
 void ra_set_int(memref ra_ref, unsigned nth, int val)
@@ -173,6 +282,20 @@ void ra_append_char(memref ra_ref, char val)
   ra_append(ra_ref,&val);
 }
 
+void ra_append_str(memref ra_ref, char* val, int len)
+{
+  for(int i = 0; i < len; i++)
+    {
+      ra_append(ra_ref,val++);
+    }
+}
+
+void ra_append_ra_str(memref ra_ref, memref ra_source_ref)
+{
+  //todo: we could memcpy this if we ensure there's enough space.
+  int len = ra_count(ra_source_ref);
+  ra_append_str(ra_ref, ra_data(ra_source_ref), len);
+}
 ///prints string
 void ra_wl(memref ra_ref)
 {
@@ -203,44 +326,8 @@ void ra_free(ref* ra_ref)
   TL("ra_free enter\n");
   int targ_off = ra_ref->targ_off;
   refarray* ra = dyn_pool_get(dyn_memory, targ_off);
-
-  // for any reference items, decrease their refcount.
-
-  //special case here for KVP items, since they can only appear
-  //in an RA and form a linked list, also traverse that and adjust
-  //the refcounts.
-  int max = ra->element_count;
-  memref* data = (memref*)&ra->data;
-  for(int i = 0; i < max; i++)
-    {
-      //    DL("!!TESTTING type %i\n", data->type);
-      if(data->type == KVP)
-        {
-          dec_refcount(*data);
-          DL("KVP\n");
-          key_value* kvp = deref(data);
-          while(1)
-            {
-              dec_refcount(kvp->key);
-              dec_refcount(kvp->val);
-              if(kvp->next.type != 0)
-                {
-                  kvp = deref(&kvp->next);
-                }
-              else
-                {
-                  break;
-                }
-            }
-        }
-      else if(!is_value(*data))
-        {
-          dec_refcount(*data);
-        }
-      data++;
-    }  
-
-  
   dyn_pool_free(dyn_memory, targ_off);
   TL("ra_free exit\n");
 }
+
+

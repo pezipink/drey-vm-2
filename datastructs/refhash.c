@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <assert.h>
 #include "refhash.h"
 #include "..\global.h"
 #include "..\memory\manager.h"
@@ -40,7 +41,6 @@ memref hash_init(unsigned initial_size)
   unsigned actual_size = get_next_prime(initial_size);
   memref bucket_ref = ra_init(sizeof(memref),actual_size);
   ra_consume_capacity(bucket_ref);
-  inc_refcount(bucket_ref);
   hash->id = max_hash_id++;
   hash->kvp_count = 0;
   hash->buckets = bucket_ref;
@@ -106,6 +106,8 @@ memref hash_get(memref hash, memref key)
         }
       data = (key_value*)deref(&data->next);
     }
+
+  assert(memref_equal(key,data->key));
   TL("hash_get exit\n");
   return data->val;
   
@@ -168,6 +170,121 @@ key_value* hash_get_kvp(memref hash, memref key)
   return data;
 }
 
+//returns a new ra with the values
+memref hash_get_values(memref hashref)
+{
+  refhash* hash = deref(&hashref);
+  int bucketCount = ra_count(hash->buckets);
+  memref ra_ret = ra_init(sizeof(memref),hash->kvp_count);
+  ra_consume_capacity(ra_ret);
+  key_value* kvp = 0;
+  int eleCount = 0;
+  for(int i = 0; i < bucketCount; i++)
+    { 
+      memref r = ra_nth_memref(hash->buckets, i);
+      if(r.type == KVP)
+        {
+          while(true)
+            {
+              kvp = deref(&r);                  
+              ra_set_memref(ra_ret, eleCount, &kvp->val);
+              eleCount++;
+              if(kvp->next.type == KVP)
+                {
+                  r = kvp->next;
+                }
+              else
+                {
+                  break;
+                }
+            }
+        }
+      if(eleCount == hash->kvp_count)
+        {
+          break;
+        }
+    }
+  return ra_ret;
+}
+
+//returns a new ra with the keys
+memref hash_get_keys(memref hashref)
+{
+  refhash* hash = deref(&hashref);
+  int bucketCount = ra_count(hash->buckets);
+  memref ra_ret = ra_init(sizeof(memref),hash->kvp_count);
+  ra_consume_capacity(ra_ret);
+  key_value* kvp = 0;
+  int eleCount = 0;
+  for(int i = 0; i < bucketCount; i++)
+    { 
+      memref r = ra_nth_memref(hash->buckets, i);
+      if(r.type == KVP)
+        {
+          while(true)
+            {
+              kvp = deref(&r);
+              ra_wl(kvp->key);
+              ra_set_memref(ra_ret, eleCount, &kvp->key);
+              eleCount++;
+              if(kvp->next.type == KVP)
+                {
+                  r = kvp->next;
+                }
+              else
+                {
+                  break;
+                }
+            }
+        }
+      if(eleCount == hash->kvp_count)
+        {
+          break;
+        }
+    }
+  return ra_ret;
+}
+
+//returns a ra with the key_value refs
+//DO NOT STORE THESE KEY_VALUES!!
+memref hash_get_key_values(memref hashref)
+{
+  refhash* hash = deref(&hashref);
+  int bucketCount = ra_count(hash->buckets);
+  memref ra_ret = ra_init(sizeof(memref),hash->kvp_count);
+  ra_consume_capacity(ra_ret);
+  key_value* kvp = 0;
+  int eleCount = 0;
+  for(int i = 0; i < bucketCount; i++)
+    { 
+      memref r = ra_nth_memref(hash->buckets, i);
+      if(r.type == KVP)
+        {
+          while(true)
+            {
+              kvp = deref(&r);
+              ra_set_memref(ra_ret, eleCount, &r);
+              memref wtf = ra_nth_memref(ra_ret, eleCount);
+              eleCount++;
+              if(kvp->next.type == KVP)
+                {
+                  r = kvp->next;
+                }
+              else
+                {
+                  break;
+                }
+            }
+        }
+      if(eleCount == hash->kvp_count)
+        {
+          break;
+        }
+    }
+  return ra_ret;
+}
+
+
 void hash_remove(memref hash, memref key)
 {
   TL("hash_remove enter\n");
@@ -207,9 +324,6 @@ void hash_remove(memref hash, memref key)
     }
   
   h->kvp_count--;
-  dec_refcount(curr_ref);
-  dec_refcount(data->key);
-  dec_refcount(data->val)    ;
   if(prev == NULL && data->next.type != 0)
     {
       TL("cleared bucket list\n");
@@ -242,13 +356,7 @@ void hash_resize(refhash* h)
 
   memref new_buckets = ra_init(sizeof(memref),new_size);
   ra_consume_capacity(new_buckets);
-  #if DEBUG
-  if(get_ref(h->buckets.data.i)->refcount != 1)
-    {
-      DL("!! Critical error, hash bucket reference with != 1 ref count : %i\n", get_ref(h->buckets.data.i)->refcount);
-    }
-#endif
-  get_ref(h->buckets.data.i)->refcount = 0;
+
   TL("resizing hash with kvp count %i from %i to %i buckets\n", h->kvp_count, ra_count(h->buckets), new_size);
   int count = ra_count(h->buckets);
   for(int i = 0; i < count; i++)
@@ -272,7 +380,6 @@ void hash_resize(refhash* h)
 
           kvp->next = current;
           ra_set(new_buckets,bucket_index,&item);
-          inc_refcount(item);
           
           TL("kvp->next = %i\n",kvp->next);
           item = next;
@@ -287,7 +394,6 @@ void hash_resize(refhash* h)
   /* dyn_pool_free(dyn_memory,get_ref(h->buckets.data.i)->targ_off); */
   TL("assigning new bucket list\n");
   h->buckets = new_buckets;
-  inc_refcount(h->buckets);//.data.r->refcount++;
   TL("hash_resize exit\n");
 }
 
@@ -342,8 +448,6 @@ void hash_set(memref hash, memref key, memref value)
       if(replaced == 1)
         {
           TL("replacing key in hash\n");
-          dec_refcount(data->val);
-          inc_refcount(value);
           data->val = value;
         }
       else
@@ -357,9 +461,6 @@ void hash_set(memref hash, memref key, memref value)
   if(replaced == 0)
     {
       TL("increasing refs\n");
-      inc_refcount(key);
-      inc_refcount(value);
-      inc_refcount(kvp_new_ref);
       TL("setting..\n");
       kvp_new_ref.type = KVP;
       ra_set(bucket_ref,bucket_index,&kvp_new_ref);
@@ -375,20 +476,13 @@ void hash_set(memref hash, memref key, memref value)
   TL("hash_set exit\n");
 }
 
+
+
 void hash_free(ref* hash_ref)
 {
   TL("hash_free enter\n");
-  #if DEBUG
-  if(hash_ref->refcount != 0)
-    {
-      DL("Critical error in hash_free, refcount was not zero!\n");
-    }
-  #endif
   refhash* h = fixed_pool_get(hash_memory, hash_ref->targ_off);
 
-  //here we simply free via refcount the ra and let it deal with the kvps
-  //as a special case.
-  dec_refcount(h->buckets);
   fixed_pool_free(hash_memory,hash_ref->targ_off);
   TL("hash_free exit\n");
 }

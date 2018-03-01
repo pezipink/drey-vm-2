@@ -16,6 +16,12 @@ memref hash_init(unsigned initial_size);
 
 memref hash_get(memref hash, memref key);
 
+memref hash_get_values(memref hash);
+
+memref hash_get_keys(memref hash);
+
+memref hash_get_key_values(memref hash);
+
 int hash_try_get(memref* result, memref hash, memref key);
 
 bool hash_contains(memref hash, memref key);

@@ -1,5 +1,7 @@
 #ifndef _GC_H
 #define _GC_H
+#include <winsock2.h>
+#include <windows.h>
 
 #include "manager.h"
 

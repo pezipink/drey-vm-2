@@ -1,13 +1,18 @@
 #include "manager.h"
 #include "..\global.h"
 #include "..\datastructs\refarray.h"
-MemoryPool_Fixed* int_memory = 0; // ints and pointers
+#include "..\datastructs\refhash.h"
+
 MemoryPool_Fixed* ref_memory = 0;
 MemoryPool_Fixed* hash_memory = 0;
 MemoryPool_Fixed* kvp_memory = 0;
 MemoryPool_Dynamic* dyn_memory = 0;
 MemoryPool_Fixed* scope_memory = 0;
+MemoryPool_Fixed* func_memory = 0;
 MemoryPool_Fixed* stack_memory = 0;  // pool of pools!
+MemoryPool_Fixed* go_memory = 0;
+MemoryPool_Fixed* loc_memory = 0;
+MemoryPool_Fixed* loc_ref_memory = 0; 
 
 unsigned max_hash_id = 1;
 
@@ -16,38 +21,15 @@ ref* get_ref(unsigned offset)
   return (ref*)fixed_pool_get(ref_memory,offset);
 }
 
-void inc_refcount(memref ref)
-{  
-  if(!is_value(ref))
-    {
-      get_ref(ref.data.i)->refcount++;
-    }
-}
-void dec_refcount(memref ref)
-{
-  if(!is_value(ref))
-    {
-      TL("decreasing refcount on type %i from %i\n", get_ref(ref.data.i)->type, get_ref(ref.data.i)->refcount);
-      get_ref(ref.data.i)->refcount--;
-    }
-}  
 
 memref malloc_ref(char type, unsigned targ_offset)
 {
   TL("malloc_ref entry\n");
-  #if DEBUG
-  if(ref_memory->free_offset == -1)
-    {
-      /* printf("!!!!!!!!! CRITICAL EXCEPTION, RAN OUT OF REFERENCES!!!!!\n"); */
-    }
-  #endif
   unsigned ref_off = fixed_pool_alloc(ref_memory);
   TL("new ref offset is %i\n",ref_off);
   ref* r = (ref*)fixed_pool_get(ref_memory,ref_off);
-  // ref->ref_off = ref_off;
   r->type = type;
   r->targ_off = targ_offset;
-  r->refcount = 0;
   memref mr;
   mr.type = type;
   mr.data.i = ref_off;
@@ -70,6 +52,46 @@ memref malloc_kvp(memref key, memref val, memref next)
   return ref;
 }
 
+memref malloc_go(int id)
+{
+  TL("malloc_go entry\n");
+  //allocate int  
+  int go_off = fixed_pool_alloc(go_memory);
+  gameobject* go = (gameobject*)fixed_pool_get(go_memory,go_off);  
+  go->props = hash_init(3);
+  go->id = id;
+  //alloc ref to it
+  memref ref = malloc_ref(GameObject,go_off);
+  TL("malloc_go exit\n");
+  return ref;
+}
+
+memref malloc_location(stringref key)
+{
+  TL("malloc_loc entry\n");
+  int loc_off = fixed_pool_alloc(loc_memory);
+  location* loc = (location*)fixed_pool_get(loc_memory,loc_off);  
+  loc->key = key;
+  loc->siblings = ra_init(sizeof(memref),3);
+  loc->children = ra_init(sizeof(memref),3);
+  loc->props = hash_init(3);
+  loc->objects = hash_init(3);
+  memref ref = malloc_ref(Location,loc_off);
+  TL("malloc_loc exit\n");
+  return ref;
+}
+
+
+memref malloc_location_ref()
+{
+  TL("malloc_locref entry\n");
+  int loc_off = fixed_pool_alloc(loc_ref_memory);
+  locationref* loc = (locationref*)fixed_pool_get(loc_ref_memory,loc_off);    
+  loc->props = hash_init(3);
+  memref ref = malloc_ref(LocationReference,loc_off);
+  TL("malloc_locref exit\n");
+  return ref;
+}
 
 memref malloc_int(int val)
 {
@@ -81,7 +103,6 @@ memref malloc_int(int val)
   TL("malloc_int exit\n");
   return v;
 }
-
 void free_ref(ref* ref, int ref_offset)
 {
   TL("free_ref enter for offset %i type %i\n", ref_offset, ref->type);
@@ -89,20 +110,40 @@ void free_ref(ref* ref, int ref_offset)
   switch(ref->type)
     {
     case String:
-      DL("freeing string..\n");
+      TL("freeing string..\n");
       ra_string_free(ref);
       break;
     case Array:
-      DL("freeing array..\n");
+      TL("freeing array..\n");
       ra_free(ref);
       break;
     case Hash:
-      DL("freeing hash..\n");
+      TL("freeing hash..\n");
       hash_free(ref);
       break;
+    case GameObject:
+      TL("freeing gameobject..\n");
+      fixed_pool_free(go_memory,ref->targ_off);
+      break;
+    case Location:
+      TL("freeing location..\n");
+      fixed_pool_free(loc_memory,ref->targ_off);
+      break;
+    case LocationReference:
+      TL("freeing locationref..\n");
+      fixed_pool_free(loc_ref_memory,ref->targ_off);
+      break;
+    case Scope:
+      TL("freeing scope..\n");
+      fixed_pool_free(scope_memory, ref->targ_off);
+      break;
     case KVP:
-      DL("freeing kvp..\n");
+      TL("freeing kvp..\n");
       fixed_pool_free(kvp_memory, ref->targ_off);
+      break;
+    case Function:
+      TL("freeing func..\n");
+      fixed_pool_free(func_memory, ref->targ_off);
       break;
     default:
       DL("didnt know how to free memory type %i\n", ref->type);
@@ -131,8 +172,17 @@ void* deref(memref* ref)
       return dyn_pool_get(dyn_memory, get_ref(ref->data.i)->targ_off);
     case Scope:
       return fixed_pool_get(scope_memory, get_ref(ref->data.i)->targ_off);
+    case Function:      
+      return fixed_pool_get(func_memory, get_ref(ref->data.i)->targ_off);      
     case Stack:
       return fixed_pool_get(stack_memory, get_ref(ref->data.i)->targ_off);
+    case GameObject:
+      return fixed_pool_get(go_memory, get_ref(ref->data.i)->targ_off);
+    case Location:
+      return fixed_pool_get(loc_memory, get_ref(ref->data.i)->targ_off);
+    case LocationReference:
+      return fixed_pool_get(loc_ref_memory, get_ref(ref->data.i)->targ_off);
+            
     default:
       DL("Dereference failed, invalid type %i\n",ref->type);
       // DL("targ off %i\n",reftarg_off);
@@ -141,7 +191,7 @@ void* deref(memref* ref)
     }
 
   DL("Dereference failed, invalid type %i",ref->type);
-  return 0;
+  return 0;                  
 
 }
 
@@ -154,8 +204,70 @@ void* deref(memref* ref)
 /*   return deref(&m); */
 /* } */
 
+int memref_lt(memref x, memref y)
+{
+  switch(x.type)
+    {
+    case Int32:
+      switch(y.type)
+        {
+        case Int32:
+          DL("testing %i < %i = %i\n", x.data.i, y.data.i, x.data.i < y.data.i);
+          return x.data.i < y.data.i;
+        }
+      break;        
+    }
+  DL("!!! NO LT Function for types %i and %i\n", x.type, y.type);
+  return 0;
+}
+int memref_lte(memref x, memref y)
+{
+  switch(x.type)
+    {
+    case Int32:
+      switch(y.type)
+        {
+        case Int32:
+          return x.data.i <= y.data.i;
+        }
+      break;        
+    }
+  DL("!!! NO LTE Function for types %i and %i\n", x.type, y.type);
+  return 0;
+}
 
+int memref_gt(memref x, memref y)
+{
+  switch(x.type)
+    {
+    case Int32:
+      switch(y.type)
+        {
+        case Int32:
+          DL("testing %i > %i = %i\n", x.data.i, y.data.i, x.data.i > y.data.i);
+          return x.data.i > y.data.i;
+        }
+      break;        
+    }
+  DL("!!! NO GT Function for types %i and %i\n", x.type, y.type);
+  return 0;
+}
 
+int memref_gte(memref x, memref y)
+{
+  switch(x.type)
+    {
+    case Int32:
+      switch(y.type)
+        {
+        case Int32:
+          return x.data.i >= y.data.i;
+        }
+      break;        
+    }
+  DL("!!! NO GTE Function for types %i and %i\n", x.type, y.type);
+  return 0;
+}
 int memref_equal(memref x, memref y)
 {
   switch(x.type)

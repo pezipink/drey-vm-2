@@ -1,7 +1,11 @@
 #ifndef _VM_H
 #define _VM_H
+#include <winsock2.h>
+#include <windows.h>
 
- enum opcode
+#include "..\memory\manager.h"
+#include "..\zmq.h"
+enum opcode
 	{
 		brk = 0,
 		pop = 1,
@@ -120,24 +124,27 @@
 		dbg = 114,
 		dbgl = 115
 	};
-typedef struct scope
-{
-  memref locals; //obj->obj dict
-  int return_address; //if a func
-  memref closure_scope;
-} scope;
+
 
 typedef struct exec_context
 {
   int pc;
   memref eval_stack;
-  memref scopes; //ra memrefs
+  raref scopes; //ra memrefs
 } exec_context;
 
 typedef struct fiber
 {
   int id;
-  memref exec_contexts;
+  raref exec_contexts;
+  
+  bool awaiting_response;
+  // details of message sent to client
+  // so it can be resent and response validated.
+  hashref valid_responses;
+  stringref waiting_client;
+  stringref waiting_data;
+  
 } fiber;
 
 typedef struct vm
@@ -145,12 +152,30 @@ typedef struct vm
   int pc;
   int gc_off;
   int cycle_count;
-  memref program;
-  memref string_table;
+  raref  program;
+  hashref string_table;
   int entry_point;
-  memref fibers;
+  raref fibers;
+
+  int req_players;
+  int num_players;
+  
+  bool game_over;
+  //universe
+  int u_max_id;
+  hashref u_objs;
+  hashref u_locrefs;
+  hashref u_locs;
+
+  //zmq socket.
+  void* ip_machine;
 } vm;
 
-vm init_vm();
+vm init_vm(void* socket);
+
+void vm_client_connect(vm* machine, char* clientid, int len);
+
+void vm_handle_response(vm* machine, char* clientid, int clientLen, char* response, int responseLen);
+
 #endif
 
