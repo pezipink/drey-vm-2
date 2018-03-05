@@ -1505,7 +1505,7 @@ int step(vm* const vm, int fiber_index)
                           fib = get_fiber(vm, 0);
                           fib->awaiting_response = None;
                         }
-                      return 1;
+                      return 3;
                     }
                   else
                     {

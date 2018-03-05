@@ -100,7 +100,7 @@ DWORD WINAPI machine_thread(LPVOID context)
   int count = 0;
   while(1)
     {
-      zmq_poll (items, 1, 10);
+      zmq_poll (items, 1, 1);
       if (items [0].revents & ZMQ_POLLIN)
         {
           zmq_msg_t msg_id;
@@ -185,10 +185,7 @@ DWORD WINAPI machine_thread(LPVOID context)
         }
       else if(!machine.game_over && machine.num_players == machine.req_players)
         {
-          //no messages to process, execute the VM up
-          //to the next suspend call.
-
-          int count = ra_count(machine.fibers);
+          int count = ra_count(machine.fibers);          
           for(int i = 0; i < count; i++)
             {
               fiber* f  = (fiber*)ra_nth(machine.fibers,i);
@@ -199,16 +196,21 @@ DWORD WINAPI machine_thread(LPVOID context)
                     {
                       int ret = step(&machine, i);
                       machine.cycle_count++;
-                      //                          gc_mark_n_sweep(&machine);
+
                       if(machine.cycle_count % 100 == 0)
                         {
-
+                          gc_mark_n_sweep(&machine);
                         }
                       if(ret == 2)
                         {
                           machine.game_over = true;
                           machine.u_objs = hash_init(3);
-                          //                          machine.string_table = hash_init(3);
+                          break;
+                        }
+                      if(ret == 3) // signifies a fiber ended
+                        {
+                          i--;
+                          count = ra_count(machine.fibers);          
                           break;
                         }
                       else if(ret != 0)
@@ -216,13 +218,9 @@ DWORD WINAPI machine_thread(LPVOID context)
                           break;
                         }
                     }
-                  /* gc_print_stats(); */
-                  /* gc_mark_n_sweep(&machine); */
-                  /* gc_print_stats(); */
         
                 }
             }
-
           //todo: compress dynamic memory
         }
     }
