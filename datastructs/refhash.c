@@ -84,6 +84,61 @@ int hash_try_get(memref* result, memref hash, memref key)
  
 }
 
+
+void print_hash(memref hashref)
+{  
+  refhash* hash = deref(&hashref);
+  int bucketCount = ra_count(hash->buckets);
+  key_value* kvp = 0;
+  int eleCount = 0;
+  printf("hash contents:\n");
+  for(int i = 0; i < bucketCount; i++)
+    { 
+      memref r = ra_nth_memref(hash->buckets, i);
+      if(r.type == KVP)
+        {
+          while(true)
+            {
+              kvp = deref(&r);
+              if(kvp->key.type == String)
+                {                  
+                  ra_w(kvp->key);
+                }
+              else
+                {
+                  printf("%i",kvp->key.data.i);
+                }
+              printf(" : ");
+              if(kvp->val.type == String)
+                {                  
+                  ra_w(kvp->val);
+                }
+              else
+                {
+                  printf("%i",kvp->val.data.i);
+                }
+
+              printf("\n");
+                
+
+              eleCount++;
+              if(kvp->next.type == KVP)
+                {
+                  r = kvp->next;
+                }
+              else
+                {
+                  break;
+                }
+            }
+        }
+      if(eleCount == hash->kvp_count)
+        {
+          break;
+        }
+    }
+}
+
 memref hash_get(memref hash, memref key)
 {
   TL("hash_get enter\n");
@@ -107,6 +162,12 @@ memref hash_get(memref hash, memref key)
       data = (key_value*)deref(&data->next);
     }
 
+  if(!memref_equal(key,data->key))
+    {
+      printf("couldn't find key ");
+      ra_wl(key);
+      print_hash(hash);
+    }
   assert(memref_equal(key,data->key));
   TL("hash_get exit\n");
   return data->val;
@@ -264,7 +325,6 @@ memref hash_get_key_values(memref hashref)
             {
               kvp = deref(&r);
               ra_set_memref(ra_ret, eleCount, &r);
-              memref wtf = ra_nth_memref(ra_ret, eleCount);
               eleCount++;
               if(kvp->next.type == KVP)
                 {

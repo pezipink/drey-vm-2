@@ -20,6 +20,8 @@ memref hash_get_values(memref hash);
 
 memref hash_get_keys(memref hash);
 
+void print_hash(memref hash);
+
 memref hash_get_key_values(memref hash);
 
 int hash_try_get(memref* result, memref hash, memref key);

@@ -52,6 +52,7 @@ void stack_push(memref stack_ref, memref ref)
 {
   TL("stack_push enter\n");
   refstack* stack = deref(&stack_ref);
+  TL("pushing to stack at %p with pool %p\n", stack, stack->pool);
   int offset = fixed_pool_alloc(stack->pool);
   memref* ref_off = (memref*)fixed_pool_get(stack->pool,offset);
   TL("pushed to offset %i\n", offset);
@@ -66,37 +67,25 @@ int stack_head_offset(memref stack_ref)
  return stack->head_offset;
 }
 
-/* void stack_push_int(refstack* stack, int value) */
-/* { */
-/*   memref v; */
-/*   v.type = Int32; */
-/*   v.data.i = value; */
-/*   stack_push(stack,v); */
-/* } */
 
-/* void stack_push_double(refstack* stack, double value) */
-/* { */
-/*   memref v; */
-/*   v.type = Double; */
-/*   v.data.d = value; */
-/*   stack_push(stack,v); */
-/* } */
-/* void debug_print_stack(refstack* stack) */
-/* { */
-/*   int* ptr = (int*)fixed_pool_get(stack->pool,0); */
-/*   DL("stack head is at offset %i\n", stack->head_offset); */
-/*   int i = 0; */
-/*   do */
-/*     { */
-/*       DL("index %i ref offset %i\n",i,*ptr); */
-/*       memref* ref = (memref*)fixed_pool_get(ref_memory,*ptr); */
-/*       DL("\tmemref data:\n"); */
-/*       DL("\t\ttype %i\n",ref->type); */
-/*       DL("\t\trefcount %i\n",ref->refcount); */
-/*       DL("\t\tref_off %i\n",ref->ref_off); */
-/*       DL("\t\ttarg_off %i\n",ref->targ_off); */
-/*       i += sizeof(int); */
-/*       ptr++; */
-/*     } */
-/*   while(i <= stack->head_offset); */
-/* } */
+memref stack_clone(memref stack_ref)
+{ 
+  int off = fixed_pool_alloc(stack_memory);
+  refstack* new_stack = (refstack*)fixed_pool_get(stack_memory,off);
+  refstack* old_stack = deref(&stack_ref);
+
+  new_stack->head_offset = old_stack->head_offset;  
+
+  fixed_pool_init(&new_stack->pool, sizeof(memref), old_stack->pool->element_count);
+
+  int size =
+    old_stack->pool->element_size * old_stack->pool->element_count;
+
+  new_stack->pool->free_offset = old_stack->pool->free_offset;
+
+  memcpy(&new_stack->pool->data, &old_stack->pool->data, size);
+  
+  memref ref = malloc_ref(Stack,off);
+  return ref;
+  
+}

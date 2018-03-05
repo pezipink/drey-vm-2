@@ -145,6 +145,10 @@ void free_ref(ref* ref, int ref_offset)
       TL("freeing func..\n");
       fixed_pool_free(func_memory, ref->targ_off);
       break;
+    case Stack:
+      TL("freeing stack\n");
+      fixed_pool_free(stack_memory, ref->targ_off);
+      break;
     default:
       DL("didnt know how to free memory type %i\n", ref->type);
       return;
@@ -212,7 +216,6 @@ int memref_lt(memref x, memref y)
       switch(y.type)
         {
         case Int32:
-          DL("testing %i < %i = %i\n", x.data.i, y.data.i, x.data.i < y.data.i);
           return x.data.i < y.data.i;
         }
       break;        
@@ -244,7 +247,6 @@ int memref_gt(memref x, memref y)
       switch(y.type)
         {
         case Int32:
-          DL("testing %i > %i = %i\n", x.data.i, y.data.i, x.data.i > y.data.i);
           return x.data.i > y.data.i;
         }
       break;        
@@ -456,4 +458,29 @@ memref int_to_memref(int value)
 int is_value(memref x)
 {
   return x.type < Hash;
+}
+
+void print_ref(memref mr)
+{
+  switch(mr.type)
+    {
+    case Int32:
+      printf("%i",mr.data.i);
+      break;
+    case String:
+      ra_w(mr);
+      break;
+    case Array:
+      putchar('[');
+      int max = ra_count(mr);
+      for(int i = 0; i < max; i++)
+        {      
+          print_ref(ra_nth_memref(mr,i));
+        }
+      putchar(']');
+      break;
+    default:
+      printf("dbgl not implemented for type %i\n", mr.type);
+
+    }
 }

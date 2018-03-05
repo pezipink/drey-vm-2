@@ -122,7 +122,10 @@ enum opcode
 		apply = 112,
 		ret = 113,
 		dbg = 114,
-		dbgl = 115
+		dbgl = 115,
+                getraw = 116,
+                fork = 117,
+                join = 118
 	};
 
 
@@ -133,12 +136,21 @@ typedef struct exec_context
   raref scopes; //ra memrefs
 } exec_context;
 
+enum response_types
+  {
+    None = 0,
+    Choice = 1,
+    RawData = 2,
+    Join = 3
+  };
+  
+
 typedef struct fiber
 {
   int id;
   raref exec_contexts;
   
-  bool awaiting_response;
+  enum response_types awaiting_response;
   // details of message sent to client
   // so it can be resent and response validated.
   hashref valid_responses;
@@ -176,6 +188,7 @@ vm init_vm(void* socket);
 void vm_client_connect(vm* machine, char* clientid, int len);
 
 void vm_handle_response(vm* machine, char* clientid, int clientLen, char* response, int responseLen);
+void vm_handle_raw(vm* machine, char* clientid, int clientLen, char* response, int responseLen);
 
 #endif
 

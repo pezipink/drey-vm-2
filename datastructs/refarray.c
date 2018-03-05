@@ -24,6 +24,16 @@ memref ra_init(unsigned element_size, unsigned element_capacity)
   return ra_init_raw(element_size, element_capacity, Array);
 }
 
+void print_array(memref ra_ref)
+{
+  int max = ra_count(ra_ref);
+  for(int i = 0; i < max; i++)
+    {
+      memref n = ra_nth_memref(ra_ref,i);
+      printf("index %i has ref of type %i and val %i\n",i,  n.type, n.data.i);
+    }
+}
+  
 
 void ra_consume_capacity(memref ra_ref)
 {
@@ -127,7 +137,7 @@ void ra_remove(memref ra_ref, unsigned nth, unsigned amount)
       DIE("Ciritical error - array out of bounds. nth is %i but count is %i\n", nth, ra->element_count);
       return;
     }
-  if(nth + amount >= ra->element_count)
+  if(nth + amount > ra->element_count)
     {
       DIE("Ciritical error - array out of bounds. nth + amount is %i but count is %i\n", nth + amount, ra->element_count);
       return;
@@ -140,9 +150,13 @@ void ra_remove(memref ra_ref, unsigned nth, unsigned amount)
   #endif
 
   //copy the elements in front down and change the element count to suit.
-  int targetAddress = (int)&ra->data + (nth * ra->element_size);
-  int sourceAddress = (int)&ra->data + ((nth + amount) * ra->element_size);
-  memcpy(targetAddress,sourceAddress,amount * ra->element_size);
+  if(nth + amount < ra->element_count)
+    {
+      int toMove = ra->element_count - (nth + amount);
+      int targetAddress = (int)&ra->data + (nth * ra->element_size);
+      int sourceAddress = (int)&ra->data + ((nth + amount) * ra->element_size);
+      memcpy(targetAddress,sourceAddress,toMove * ra->element_size);
+    }
   ra->element_count -= amount;
   
 }
@@ -194,7 +208,6 @@ memref ra_split_bottom(memref ra_ref, unsigned nth)
     }
   #endif
 
-
   int newCount = ra->element_count - nth;
   TL("new array count is %i\n", newCount);
   memref newRaRef = ra_init_raw(ra->element_size,newCount,ra_ref.type);
@@ -223,6 +236,17 @@ void ra_set_memref(memref ra_ref, unsigned nth, memref* new_element)
   memref* ref = (memref*)&ra->data + nth;
   //(*new_element)->refcount++;
   memcpy((int)ref,(int)new_element,ra->element_size);
+}
+
+memref ra_clone(memref ra_ref)
+{
+  refarray* old = deref(&ra_ref);
+  memref new_ref = ra_init_raw(old->element_size, old->element_capacity, ra_ref.type);
+  refarray* new = deref(&new_ref);
+  old = deref(&ra_ref);
+  new->element_count = old->element_count;
+  memcpy(&new->data,&old->data,old->element_size * old->element_capacity);
+  return new_ref;    
 }
 
 void ra_append(memref ra_ref, void* new_element)

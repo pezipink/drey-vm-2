@@ -192,6 +192,7 @@ DWORD WINAPI mediator_thread(LPVOID context)
 
                 case Data:
                 case Debug:
+                case Raw:
                   zmq_msg_init(&msg_data);
                   size = zmq_msg_recv(&msg_data,ip_root,0);
                   printf("mediator: third frame was %i bytes\n", size);
@@ -239,10 +240,12 @@ DWORD WINAPI mediator_thread(LPVOID context)
       else if (items [1].revents & ZMQ_POLLIN)
         {
           //for nwo all messages are forwarded on to clients.
+
           bool more = false;
           size_t optLen = sizeof(more);
           while(1)
             {
+              printf("!\n");
               zmq_msg_t msg;
               zmq_msg_init(&msg);
               zmq_msg_recv(&msg, ip_machine,0);

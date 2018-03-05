@@ -21,6 +21,7 @@ void print_stack(exec_context* ec)
       head--;
       offset -= sizeof(memref);
     }
+  printf("\n");
 }
 
 unsigned char read_byte(vm * const vm, exec_context * const ec)
@@ -112,19 +113,36 @@ memref init_scope()
   scope* s = (scope*)fixed_pool_get(scope_memory, off);
   s->locals = hash_init(1);
   s->return_address = 0;
+  s->is_fiber = 0;
   memref r = malloc_ref(Scope,off);  
   return r;
+}
+
+void patch_stack_pool_pointers(vm* vm)
+{
+  int fm = ra_count(vm->fibers);
+  for(int fi = 0; fi < fm; fi++)
+    {
+      fiber* f = ra_nth(vm->fibers, fi);
+      int em = ra_count(f->exec_contexts);
+      for(int ei = 0; ei < em; ei++)
+        {
+          exec_context* ec = ra_nth(f->exec_contexts, ei);
+          refstack* rs = deref(&ec->eval_stack);
+          rs->pool->owner = &rs->pool;
+        }
+    }
 }
 
 exec_context init_exec_context()
 {
   exec_context ec;
   ec.eval_stack = stack_init(1);
+
   ec.pc = 0;
   memref scopes = ra_init(sizeof(memref),1);
   memref scopeRef = init_scope();
   scope* s = deref(&scopeRef);
-  s->flags = 1;
   ra_append_memref(scopes, scopeRef);
   ec.scopes = scopes;
   return ec;
@@ -135,7 +153,7 @@ fiber init_fiber(int id)
   fiber f;
   f.id = id;
   f.exec_contexts = ra_init(sizeof(exec_context),1);
-  f.awaiting_response = false;
+  f.awaiting_response = None;
   f.waiting_client.type = 0;
   f.waiting_data.type = 0;
   f.valid_responses = hash_init(3);
@@ -159,7 +177,7 @@ vm init_vm(void* socket)
   v.cycle_count = 0;
 
   v.num_players = 0;
-  v.req_players = 1; //todo: load this somehow
+  v.req_players = 2; //todo: load this somehow
   
   fiber f = init_fiber(0);
   ra_append(v.fibers,&f);
@@ -210,9 +228,21 @@ exec_context* get_fiber_ec(vm* const vm, int index)
   return current_ec(f);
 }
 
-void vm_handle_response(vm* vm, char* clientid, int clientLen, char* response, int responseLen)
+
+exec_context clone_current_exec_context(vm* vm, int fiber_index)
 {
-  if(vm.game_over)
+  exec_context new;
+  exec_context* old = get_fiber_ec(vm, fiber_index);
+  new.pc = old->pc;
+  new.eval_stack = stack_clone(old->eval_stack);
+  old = get_fiber_ec(vm, fiber_index);
+  new.scopes = ra_clone(old->scopes);
+  return new;
+}
+
+void vm_handle_raw(vm* vm, char* clientid, int clientLen, char* response, int responseLen)
+{
+  if(vm->game_over)
     {
       return;
     }
@@ -224,23 +254,73 @@ void vm_handle_response(vm* vm, char* clientid, int clientLen, char* response, i
 
   if(hash_contains(players, id))
     {
-      //todo: the specific fiber will be included in the messae somehow.
+      //todo: the specific fiber will be included in the message somehow.
       //for now we simply look for any fiber that is waiting for this client.
       int count = ra_count(vm->fibers);
       for(int i = 0; i < count; i++)
         {
           fiber* f = ra_nth(vm->fibers, i);
-          if(f->awaiting_response && memref_equal(f->waiting_client, id))
+          if(f->awaiting_response == RawData && memref_equal(f->waiting_client, id))
+            {
+              //unload the entire data into a "string"
+              memref data = ra_init_str_raw(response, responseLen);
+              f = ra_nth(vm->fibers, i);
+              f->awaiting_response = false;
+              exec_context* ec = current_ec(f);
+              stack_push(ec->eval_stack, data);
+              return;
+            }
+        }
+    }
+  else
+    {
+      printf("response recieved from unknown player\n");
+    }
+}
+
+void vm_handle_response(vm* vm, char* clientid, int clientLen, char* response, int responseLen)
+{
+  if(vm->game_over)
+    {
+      return;
+    }
+  memref id = ra_init_str_raw(clientid,clientLen);
+  memref state_r = hash_get(vm->u_objs,int_to_memref(-1));
+  memref choice = ra_init_str_raw(response,responseLen);
+  gameobject* state_go = deref(&state_r);
+  memref players = hash_get(state_go->props, ra_init_str("players"));
+
+  if(hash_contains(players, id))
+    {
+      //todo: the specific fiber will be included in the message somehow.
+      //for now we simply look for any fiber that is waiting for this client.
+      int count = ra_count(vm->fibers);
+      for(int i = 0; i < count; i++)
+        {
+          fiber* f = ra_nth(vm->fibers, i);
+          if(f->awaiting_response == Choice && memref_equal(f->waiting_client, id))
             {              
               //check this is a valid response              
               if(hash_contains(f->valid_responses, choice))
                 {
                   f->awaiting_response = false;
-                  exec_context* ec = current_ec(f);
-                  stack_push(ec->eval_stack, choice);
+                  if(memref_equal(choice,ra_init_str("__UNDO__")))
+                    {
+                      printf("falling back to previous stack\n");
+                      refarray* ra = deref(&f->exec_contexts);
+                      printf("stack count was %i\n", ra->element_count);
+                      ra->element_count-=2;
+                      exec_context* ec = current_ec(f);
+                      ec->pc--;
+                    }
+                  else
+                    {
+                      exec_context* ec = current_ec(f);
+                      printf("pushing choice onto fiber %i stack\n", i);
+                      stack_push(ec->eval_stack, choice);
+                    }
                   return;
                 }
-              /* else if(id == "__UNDO__")  TODO - flowroutines */
               else
                 {
                   printf("received an invalid response\n");
@@ -270,7 +350,8 @@ void vm_client_connect(vm* vm, char* clientid, int len)
       for(int i = 0; i < count; i++)
         {
           fiber* f = ra_nth(vm->fibers, i);
-          if(f->awaiting_response && memref_equal(f->waiting_client, id))
+          //todo: handle other response types
+          if(f->awaiting_response == Choice && memref_equal(f->waiting_client, id))
             {
               zmq_msg_t msg_id = ra_to_msg(id);
               zmq_msg_t msg_type;
@@ -422,32 +503,8 @@ void store_prop(vm* vm, memref val, memref key, memref obj)
     }
 
   DIE("could not set prop\n");
-
 }
-void print_ref(memref mr)
-{
-  switch(mr.type)
-    {
-    case Int32:
-      printf("%i",mr.data.i);
-      break;
-    case String:
-      ra_w(mr);
-      break;
-    case Array:
-      putchar('[');
-      int max = ra_count(mr);
-      for(int i = 0; i < max; i++)
-        {      
-          print_ref(ra_nth_memref(mr,i));
-        }
-      putchar(']');
-      break;
-    default:
-      printf("dbgl not implemented for type %i\n", mr.type);
 
-    }
-}
 
 bool ref_contains(memref obj, memref key)
 {
@@ -458,7 +515,6 @@ bool ref_contains(memref obj, memref key)
       return hash_contains(g->props,key);
       break;
       
-
     default:
       DIE("contains not implemented for type %i\n", obj.type);
 
@@ -467,21 +523,26 @@ bool ref_contains(memref obj, memref key)
 }
 
 
-
 int step(vm* const vm, int fiber_index)
 {
   exec_context* ec;
   REFRESH_EC;
+  //printf("%#08x", ec->pc);
   enum opcode o = *(char*)ra_nth(vm->program,ec->pc++);
+  //  printf("  %i  ", o);
   int i;
   memref ma, mb, mc, md;
   memref* mp;
   memref str;
   gameobject* gop;
+  fiber* fib;
   scope* scope;
+
+  //print_stack(ec);
     switch(o)
     {
     case brk:
+      //software breakpoint: todo
       VL("\t\t!!brk Not implemented\n");
       break;
       
@@ -499,7 +560,7 @@ int step(vm* const vm, int fiber_index)
       break;
       
     case swapn:
-      DL("swapn\n");
+      TL("swapn\n");
       READ_INT;
       int x = i & 0xFFFF;
       int y = (i >> 16) & 0xFFFF;
@@ -522,6 +583,7 @@ int step(vm* const vm, int fiber_index)
       break;
       
     case ldvals:
+      VL("ldvals ");
       READ_STR;
       #ifdef VM_DEBUG
       ra_wl(str);
@@ -536,7 +598,7 @@ int step(vm* const vm, int fiber_index)
       break;
       
     case ldvar:
-      VL("ldvar\n");
+      VL("ldvar ");
       READ_STR;
       #ifdef VM_DEBUG
       ra_wl(str);
@@ -545,10 +607,14 @@ int step(vm* const vm, int fiber_index)
       #ifdef VM_DEBUG
       printf("loaded var ");
       ra_w(str);
-      VL(" with a value of %i\n", ma.data.i);         
+      VL(" with a value of %i\n", ma.data.i);
       #endif
 
       PUSH(ma);
+      //   printf("stack now\n");
+      REFRESH_EC;
+      //      print_stack(ec);
+    
       break;
       
     case stvar:
@@ -644,21 +710,14 @@ int step(vm* const vm, int fiber_index)
     case neg:
       VL("neg\n");
       mp = PEEK_REF;
-      if(mp->type == Int32)
-        {
-          mp->data.i = -mp->data.i;
-        }
-      else
-        {
-          DIE("!! inc expcted a int32 but got a %i\n",mp->type);
-        }
+      assert(mp->type == Int32);
+      mp->data.i = -mp->data.i;
       break;
        
     case add:
       VL("add\n");
       ma = POP;
-      mb = POP;
-      //todo: support adding of strings
+      mb = POP;      
       if(ma.type == Int32 && mb.type == Int32)
         {
           PUSH(int_to_memref( ma.data.i + mb.data.i));
@@ -830,6 +889,7 @@ int step(vm* const vm, int fiber_index)
           PUSH(int_to_memref(0));
         }
       break;
+      
     case cgt:
       VL("cgt\n");
       ma = POP;
@@ -933,28 +993,34 @@ int step(vm* const vm, int fiber_index)
     case isobj:
       VL("\t\t!!isobj Not implemented\n");
       break;
+      
     case isint:
       VL("isint\n");
       ma = POP;
       PUSH(int_to_memref(ma.type == Int32));        
       break;
+      
     case isbool:
       VL("\t\t!!isbool Not implemented\n");
       break;
+      
     case isloc:
       DL("\t\t!!isloc Not implemented\n");
       break;
+      
     case islist:
       VL("islist\n");
       ma = POP;
       PUSH(int_to_memref(ma.type == Array));        
       break;
+      
     case createobj:
       VL("createobj\n");
       ma = malloc_go(vm->u_max_id++);
       REFRESH_EC;
       PUSH(ma);
       break;
+      
     case cloneobj:
       VL("cloneobj\n");
       //shallow copy for now, not sure what this should be
@@ -963,7 +1029,6 @@ int step(vm* const vm, int fiber_index)
       mb = malloc_go(vm->u_max_id++);
       go* g = deref(&ma);
       go* gn = deref(&mb);
-      //slow copy for now, can do direct copying later.
       memref kvps = hash_get_key_values(g->props);
       int max = ra_count(kvps);
       for(int i = 0; i < max; i++)
@@ -1038,15 +1103,22 @@ int step(vm* const vm, int fiber_index)
       DL("\t\t!!p_prependlist Not implemented\n");
       break;
     case removelist:
-      DL("\t\t!!removelist not implementd\n");
+      VL("removelist\n");
       ma = POP;
       mb = POP;
-      //todo; removes matching elements in place
-      /* ma = POP; */
-      /* mb = POP; */
-      /* assert(ma.type == Int32); */
-      /* assert(mb.type == Array); */
-      /* ra_remove(ma,mb.data.i,1); */
+      assert(mb.type == Array);
+
+      max = ra_count(mb);
+      for(i = 0; i < max; i++)
+        {
+          if(memref_equal(ma, ra_nth_memref(mb,i)))
+            {
+              ra_remove(mb, i, 1);
+              max--;
+              i--;
+            }
+        }
+
       break;
     case p_removelist:
       DL("\t\t!!p_removelist Not implemented\n");
@@ -1054,19 +1126,35 @@ int step(vm* const vm, int fiber_index)
 
     case len:
       VL("len\n");
-      PUSH(int_to_memref(ra_count(POP)));
+      ma = POP;
+      assert(ma.type == Array || ma.type == String);
+      PUSH(int_to_memref(ra_count(ma)));
       break;
 
     case p_len:
       VL("p_len\n");
-      PUSH(int_to_memref(ra_count(PEEK)));
+      ma = PEEK;
+      assert(ma.type == Array || ma.type == String);
+      PUSH(int_to_memref(ra_count(ma)));
       break;
 
     case index:
       VL("index\n");
       ma = POP;
       mb = POP;
-      PUSH(ra_nth_memref(mb,ma.data.i));
+      if(mb.type == Array)
+        {
+          PUSH(ra_nth_memref(mb,ma.data.i));
+        }
+      else if(mb.type == String)
+        {
+          i = *(char*)ra_nth(mb,ma.data.i);
+          PUSH(int_to_memref(i));
+        }
+      else
+        {
+          assert(0);
+        }
       break;
       
     case p_index:
@@ -1082,14 +1170,8 @@ int step(vm* const vm, int fiber_index)
       mb = POP;
       mc = POP;
       #if DEBUG
-      if(mb.type != Int32)
-        {
-          DIE("setindex called with a non int index");
-        }
-      if(mc.type != Array)
-        {
-          DIE("setindex called with a non array ");
-        }
+      assert(mb.type == Int32);
+      assert(mc.type == Array);
       #endif
       ra_set_memref(mc,mb.data.i,ma);
       break;
@@ -1097,6 +1179,7 @@ int step(vm* const vm, int fiber_index)
     case keys:
       VL("keys\n");
       ma = POP;
+      assert(ma.type == Hash || ma.type == GameObject);
       if(ma.type == Hash)
         {
           mb = hash_get_keys(ma);
@@ -1116,7 +1199,8 @@ int step(vm* const vm, int fiber_index)
       break;
     case values:
       VL("values \n");
-      ma = POP; 
+      ma = POP;
+      assert(ma.type == Hash || ma.type == GameObject);
       if(ma.type == Hash)
         {
           mb = hash_get_values(ma);
@@ -1198,30 +1282,25 @@ int step(vm* const vm, int fiber_index)
       ma = POP;  //bottom bool
       mb = POP;  //nth
       mc = POP;  //list
-
-      if(mc.type == Array || mc.type == String)
+      assert(mc.type == Array);
+      //don't allow mutating strings right now
+      //since they might be keys 
+      if(ma.data.i > 0)
         {
-          if(ma.data.i > 0)
-            {
-              //remove from start              
-              md = ra_split_bottom(mc,mb.data.i);
-              REFRESH_EC;
-              PUSH(md);
-            }
-          else
-            {                 
-              //remove from end
-              md = ra_split_top(mc,mb.data.i);
-              REFRESH_EC;
-              PUSH(md);
-            }
+          //remove from start              
+          md = ra_split_bottom(mc,mb.data.i);
+          REFRESH_EC;
+          PUSH(md);
         }
       else
-        {
-          DIE("splitat expected an array or string, not a %i\n", mc.type);
-        }
-      
+        {                 
+          //remove from end
+          md = ra_split_top(mc,mb.data.i);
+          REFRESH_EC;
+          PUSH(md);
+        }      
       break;
+      
     case shuffle:
       DL("\t\t!!shuffle Not implemented\n");
       break;
@@ -1254,19 +1333,23 @@ int step(vm* const vm, int fiber_index)
       ra_append_memref(mc,mb);
       break;
     case p_addaction:
-      DL("\t\t!!p_addaction Not implemented\n");
+      VL("\t\t!!p_addaction Not implemented\n");
       break;
 
     case suspend:
       VL("suspend\n");
-      //TODO: copy machine status
+      exec_context ec_new = clone_current_exec_context(vm, fiber_index);
+      patch_stack_pool_pointers(vm);
+      fib = get_fiber(vm,fiber_index);
+      ra_append(fib->exec_contexts, &ec_new);
+      fib = get_fiber(vm,fiber_index);
+      REFRESH_EC;      
       ma = POP;  // clientid
       assert(ma.type == String);
       mb = POP;  // request
       assert(mb.type == Array);
       int len = ra_count(mb);
       assert(len % 2 != 0);
-      
       mc = ra_init_raw(sizeof(char),1024,String);
       char* text = "{ \"t\":\"request\",\"header\":\"";
       ra_append_str(mc,text, strlen(text));
@@ -1274,9 +1357,15 @@ int step(vm* const vm, int fiber_index)
       text = "\", \"choices\":[";
       ra_append_str(mc,text, strlen(text));
 
-      fiber*  fib = get_fiber(vm,fiber_index);
+      fib = get_fiber(vm,fiber_index);
       fib->valid_responses = hash_init(3);
-      
+
+      if(ra_count(fib->exec_contexts) > 2)
+        {
+          text = "{\"id\":\"__UNDO__\",\"text\":\"UNDO\"},";
+          ra_append_str(mc,text, strlen(text));
+          hash_set(fib->valid_responses,ra_init_str("__UNDO__"),ra_init_str("UNDO"));
+        }
       for(int i = 1; i < len; i+=2)
         {
           hash_set(fib->valid_responses,ra_nth_memref(mb,i),ra_nth_memref(mb,i+1));
@@ -1306,9 +1395,15 @@ int step(vm* const vm, int fiber_index)
       printf("sending suspend message to client ");
       ra_wl(mc);
       printf("\n");
+      text = "]}";
+      ra_append_str(mc,text, strlen(text));
+
+      printf("sending suspend message to client ");
+      ra_wl(mc);
+      printf("\n");
       
       fib = get_fiber(vm,fiber_index);
-      fib->awaiting_response = true;
+      fib->awaiting_response = Choice;
       fib->waiting_client = ma;
       fib->waiting_data = mc;
 
@@ -1323,12 +1418,16 @@ int step(vm* const vm, int fiber_index)
       zmq_msg_send(&msg_id, vm->ip_machine, ZMQ_SNDMORE);
       zmq_msg_send(&msg_type, vm->ip_machine, ZMQ_SNDMORE);
       zmq_msg_send(&msg_data, vm->ip_machine, 0);      
-
       return 1;
-      break;
       
     case cut:
-      DL("\t\t!!cut Not implemented\n");
+      VL("cut\n");
+      fib = get_fiber(vm,fiber_index);
+      int n = ra_count(fib->exec_contexts) - 1;
+      exec_context* current = ra_nth(fib->exec_contexts,n);
+      ra_set(fib->exec_contexts,0,current);
+      refarray* ra = deref(&fib->exec_contexts);
+      ra->element_count = 1;
       break;
     case say:
       DL("\t\t!!say Not implemented\n");
@@ -1347,7 +1446,6 @@ int step(vm* const vm, int fiber_index)
     case popscope:
       VL("popscope\n");
       ra_dec_count(ec->scopes);
-
       break;
       
     case lambda:
@@ -1363,7 +1461,6 @@ int step(vm* const vm, int fiber_index)
       mb = POP; // func
       mc = init_scope();
       scope = deref(&mc);
-      scope->flags = 1;
       //assume func for now (support objs etc later)
       function* apply_f = deref(&mb);
       scope->closure_scope = apply_f->closure_scope;
@@ -1380,50 +1477,138 @@ int step(vm* const vm, int fiber_index)
       //      VL("scope count is %i\n", ra_count(ec->scopes));
       if(ra_count(ec->scopes) == 1)
         {
-          VL("Program end.\n");
-           ma = current_scope_ref(ec);
-           scope = deref(&ma);
-           scope->flags = 0;
-           ra_dec_count(ec->scopes);
-           DL("scope ocunt is %i\n", ra_count(ec->scopes));
-           return 2;      
+          printf("Program end.\n");
+          ma = current_scope_ref(ec);
+          scope = deref(&ma);
+          ra_dec_count(ec->scopes);
+          DL("scope count is %i\n", ra_count(ec->scopes));
+          return 2;      
         }
       else
         {
           //walk backwards down the scopes until we find one
-          //with a return address
+          //with a return address or fiber entry point
           while(1)
             {
               ma = current_scope_ref(ec);
               scope = deref(&ma);
-              scope->flags = 0;
               ra_dec_count(ec->scopes);
               if(scope->return_address != 0)
                 {
-                  VL("returning to address is %i\n", scope->return_address);
-                  ec->pc = scope->return_address;
+                  if(scope->is_fiber)
+                    {
+                      printf("returning from fiber %i\n", fiber_index);
+                      ra_remove(vm->fibers, fiber_index, 1);
+                      if(ra_count(vm->fibers) == 1)
+                        {
+                          printf("resuimng core execution\n");
+                          fib = get_fiber(vm, 0);
+                          fib->awaiting_response = None;
+                        }
+                      return 1;
+                    }
+                  else
+                    {
+                      //if this is a fiber entry point, we are done
+                      //and can end this fibe.
+                      VL("returning to address is %i\n", scope->return_address);
+                      ec->pc = scope->return_address;
+                    }
                   break;
                 }
             }
-          
-       
           break;
         }
       
     case dbg:      
       VL("dbg\n");
       ma = POP;
+#if DEBUG
       print_ref(ma);
+#endif
       break;
       
     case dbgl:
       VL("dbgl\n");
       ma = stack_pop(ec->eval_stack);
+#if DEBUG
       print_ref(ma);
       putchar('\n');
+#endif
       break;
 
+    case getraw:
+      DL("getraw\n");
+      ma = POP;
+      ra_wl(ma);
+      fib = get_fiber(vm,fiber_index);
+      fib->awaiting_response = RawData;
+      fib->waiting_client = ma;
+      fib->waiting_data.type = 0;
+      fib->valid_responses = hash_init(3); //really need to implement clear()
+
+      //todo: we need to include the fiber id in the message
+      zmq_msg_t msg_id_raw = ra_to_msg(ma);
+      zmq_msg_t msg_type_raw;
+      zmq_msg_init_size(&msg_type_raw,1);
+      char* data_raw = zmq_msg_data(&msg_type_raw); 
+      *data_raw = (char)Raw;
+
+      zmq_msg_send(&msg_id_raw, vm->ip_machine, ZMQ_SNDMORE);
+      zmq_msg_send(&msg_type_raw, vm->ip_machine, 0);
+      return 1;
+
+    case fork:
+      //fork accepts a function and and an argument.
+      //assert there is only a single execution context and this is root fiber.
+      //clone the execution context into a new fiber and apply
+      //the argument to the function in it, marking the new scope as a fiber
+      //entry point.
+      assert(fiber_index == 0);
+      fib = get_fiber(vm,fiber_index);
+      int max_ec = ra_count(fib->exec_contexts);
+      assert(max_ec == 1);
+
+      ma = POP; //arg
+      mb = POP; //func
+
+      assert(mb.type == Function);
+
+      
+      fiber new_f = init_fiber(max_ec);
+      patch_stack_pool_pointers(vm);
+      new_f.valid_responses.type = 0;
+      new_f.waiting_client.type = 0;
+      new_f.waiting_data.type = 0;
+
+      exec_context* new_ec = current_ec(&new_f);
+
+      mc = init_scope();
+      scope = deref(&mc);
+      scope->is_fiber = true;
+      apply_f = deref(&mb);
+      scope->closure_scope = apply_f->closure_scope;
+      new_ec->pc = apply_f->address;
+      scope->return_address = new_ec->pc;
+      ra_append_memref(new_ec->scopes,mc);      
+      new_ec = current_ec(&new_f);
+      stack_push(new_ec->eval_stack,ma);
+      ra_append(vm->fibers,&new_f);
+      break;
+
+
+    case join:
+      DL("JOIN\n");
+      //assert this is the root fiber.
+      //put this fiber into the waiting state.
+      assert(fiber_index == 0);
+      fib = get_fiber(vm,fiber_index);
+      fib->awaiting_response = Join;
+      return 1;
+
     }
+
+ 
   
   return 0;
 }

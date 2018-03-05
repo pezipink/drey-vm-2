@@ -132,21 +132,29 @@ DWORD WINAPI machine_thread(LPVOID context)
 
                 case Data:
                 case Debug:
+                case Raw:
                   zmq_msg_init(&msg_data);
                   size = zmq_msg_recv(&msg_data,ip_machine,0);
-                  printf("machine: third frame was %i bytes\n", size);
+                  //                printf("machine: third frame was %i bytes\n", size);
 
-                  //extract response.
-                  char* response = 0;
-                  int responseLen = 0;
-                  if(parse_response(&response, &responseLen, zmq_msg_data(&msg_data)))
+                  if(*data == Raw)
                     {
-                      printf("parse response successfully with %i %i\n", *response, responseLen);
-                      vm_handle_response(&machine, zmq_msg_data(&msg_id), id_size, response, responseLen);
+                      vm_handle_raw(&machine, zmq_msg_data(&msg_id), id_size, zmq_msg_data(&msg_data), zmq_msg_size(&msg_data));
                     }
                   else
                     {
-                      printf("did not understand message from client\n");
+                      //extract response.
+                      char* response = 0;
+                      int responseLen = 0;
+                      if(parse_response(&response, &responseLen, zmq_msg_data(&msg_data)))
+                        {
+                          //      printf("parse response successfully with %i %i\n", *response, responseLen);
+                          vm_handle_response(&machine, zmq_msg_data(&msg_id), id_size, response, responseLen);
+                        }
+                      else
+                        {
+                          printf("did not understand memssage from client\n");
+                        }
                     }
                   hasData = true;
 
@@ -184,17 +192,17 @@ DWORD WINAPI machine_thread(LPVOID context)
           for(int i = 0; i < count; i++)
             {
               fiber* f  = (fiber*)ra_nth(machine.fibers,i);
-              if(!f->awaiting_response)
+              if(f->awaiting_response == None)
                 {
-                  printf("executing fiber\n");
+                  printf("executing fiber %i\n", i);
                   while(1)
                     {
                       int ret = step(&machine, i);
                       machine.cycle_count++;
-                      /* gc_mark_n_sweep(&machine); */
+                      //                          gc_mark_n_sweep(&machine);
                       if(machine.cycle_count % 100 == 0)
                         {
-                          //                          gc_mark_n_sweep(&machine);
+
                         }
                       if(ret == 2)
                         {

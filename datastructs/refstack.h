@@ -14,5 +14,5 @@ memref stack_peek(memref stack);
 memref* stack_peek_ref(memref stack);
 memref stack_pop(memref stack);
 void stack_push(memref stack, memref ref);
-  
+memref stack_clone(memref);  
 #endif

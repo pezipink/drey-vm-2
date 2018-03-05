@@ -52,7 +52,7 @@ typedef struct scope
   memref locals; //obj->obj dict
   int return_address; //if a func
   memref closure_scope;
-  char flags;  //used by gc for cycle pruning
+  int is_fiber;
 } scope;
 
 typedef struct function

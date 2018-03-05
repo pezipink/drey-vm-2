@@ -12,6 +12,7 @@
 
 int main(int argc, char *argv[])
 {
+
   printf("entry\n");
 
   TL("test%i\n", 0);
@@ -128,14 +129,15 @@ int main(int argc, char *argv[])
               hasType = true;
               char* data = zmq_msg_data(&msg_type);
               //printf("root: second frame was %i bytes with value %i", size, *data);
-              if(*data == Data || *data == Debug)
+              if(*data == Data || *data == Debug || *data == Raw)
                 {
+                  //TODO: limit the size of raw data to, say, 1mb
                   zmq_msg_init(&msg_data);
                   size = zmq_msg_recv(&msg_data,tcp_router,0);
                   printf("root: third frame was %i bytes", size);
                   hasData = true;
                 }
-              else if(*data < 0 || *data > 6)
+              else if(*data < 0 || *data > 7)
                 {
                   invalid = true;
                 }
@@ -144,8 +146,8 @@ int main(int argc, char *argv[])
             {
               invalid = true;
             }
-              
-          
+
+
           //there should be no more data, otherwise its a funky message
           zmq_getsockopt(tcp_router,ZMQ_RCVMORE,&more, &optLen);
           if(more)

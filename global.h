@@ -40,7 +40,9 @@ enum MessageType
     Data  = 0x3,
     Status = 0x4,
     Universe = 0x5,
-    Debug = 0x6
+    Debug = 0x6,
+    Raw = 0x7
+    
   };
 
 

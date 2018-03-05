@@ -215,20 +215,32 @@ bool gc_marker(memref mref)
 
 void gc_mark_n_sweep(vm* vm)
 {
-  DL("GC marking...\n");
-  fiber* f = (fiber*)ra_nth(vm->fibers,0);
-  exec_context* ec = (exec_context*)ra_nth(f->exec_contexts,0);
+  TL("GC marking...\n");
+  int max_fiber = ra_count(vm->fibers);
+  for(int fi = 0; fi < max_fiber; fi++)
+    {
+      fiber* f = (fiber*)ra_nth(vm->fibers,fi);
 
-  //todo: iterate exec contexts and fibers
-  scan_graph(f->valid_responses, gc_marker);
-  gc_marker(f->waiting_client);
-  gc_marker(f->waiting_data);
-  gc_marker(f->exec_contexts);
+      scan_graph(f->valid_responses, gc_marker);
+      gc_marker(f->waiting_client);
+      gc_marker(f->waiting_data);
+      gc_marker(f->exec_contexts);
+          
+      int max_ec = ra_count(f->exec_contexts);
+      for(int ei = 0; ei < max_ec; ei++)
+        {              
+          exec_context* ec = (exec_context*)ra_nth(f->exec_contexts,ei);
+          scan_graph(ec->eval_stack, gc_marker);
+          scan_graph(ec->scopes, gc_marker);
+              
+        }          
+    }
+
+
+
   gc_marker(vm->fibers);
   gc_marker(vm->program);
-
-  scan_graph(ec->eval_stack, gc_marker);
-  scan_graph(ec->scopes, gc_marker);
+  
   scan_graph(vm->string_table, gc_marker);
   scan_graph(vm->u_objs,gc_marker);
   scan_graph(vm->u_locrefs,gc_marker);

@@ -1,3 +1,6 @@
+/* #include <winsock2.h> */
+/* #include <windows.h> */
+
 #include "minunit.h"
 #include "global.h"
 #include "memory\manager.h"
@@ -5,7 +8,7 @@
 #include "datastructs\refhash_test.h"
 #include "datastructs\refstack.h"
 #include "datastructs\refarray.h"
-#include "vm\vm.h"
+/* #include "vm\vm.h" */
 
 static void setup(void)
 {
@@ -112,22 +115,6 @@ MU_TEST(_ra_basic)
 
 }
 
-MU_TEST(_ra_remove)
-{
-  memref ra = ra_init(sizeof(int),4);
-  ra_consume_capacity(ra);
-  mu_check(ra_count(ra) == 4);
-  int val = 42;
-  int val2 = 58;
-  ra_set(ra,0,&val);
-  ra_set(ra,1,&val2);
-  mu_check(ra_nth_int(ra,0) == val);
-  mu_check(ra_nth_int(ra,1) == val2);
-  ra_remove(ra,0,1);
-  mu_check(ra_count(ra) == 3);
-  mu_check(ra_nth_int(ra,0) == val2);
-}
-
 MU_TEST(_ra_split)
 {
   memref ra = ra_init(sizeof(int),4);
@@ -148,6 +135,61 @@ MU_TEST(_ra_split)
   mu_check(ra_nth_int(ra2,1) == val2);
   
 }
+MU_TEST(_ra_clone)
+{
+  memref ra = ra_init(sizeof(memref),4);
+  memref a = int_to_memref(0);
+  memref b = int_to_memref(1);
+  memref c = int_to_memref(2);
+  memref d = int_to_memref(3);
+  
+  ra_consume_capacity(ra);
+  mu_check(ra_count(ra) == 4);
+
+  ra_set_memref(ra,0,&a);
+  ra_set_memref(ra,1,&b);
+  ra_set_memref(ra,2,&c);
+  ra_set_memref(ra,3,&d);
+
+  memref ra2 = ra_clone(ra);
+  mu_check(ra_count(ra) == 4);
+  mu_check((ra_nth_memref(ra2,0)).data.i == 0);
+  mu_check((ra_nth_memref(ra2,3)).data.i == 3);
+  
+}
+
+MU_TEST(_ra_remove)
+{
+  memref ra = ra_init(sizeof(memref),4);
+  memref a = int_to_memref(0);
+  memref b = int_to_memref(1);
+  memref c = int_to_memref(2);
+  memref d = int_to_memref(3);
+  
+  ra_consume_capacity(ra);
+  mu_check(ra_count(ra) == 4);
+
+  ra_set_memref(ra,0,&a);
+  ra_set_memref(ra,1,&b);
+  ra_set_memref(ra,2,&c);
+  ra_set_memref(ra,3,&d);
+
+  ra_remove(ra,0,1);
+
+  mu_check(ra_count(ra) == 3);
+  mu_check((ra_nth_memref(ra,0)).data.i == 1);
+  mu_check((ra_nth_memref(ra,1)).data.i == 2);
+  mu_check((ra_nth_memref(ra,2)).data.i == 3);
+
+  ra_remove(ra,2,1);
+  mu_check(ra_count(ra) == 2);
+  mu_check((ra_nth_memref(ra,0)).data.i == 1);
+  mu_check((ra_nth_memref(ra,1)).data.i == 2);
+
+  ra_remove(ra,0,2);
+  mu_check(ra_count(ra) == 0);
+  
+}
 
 MU_TEST(_ra_complex)
 {
@@ -166,65 +208,76 @@ MU_TEST(_ra_complex)
   
 }
 
-MU_TEST(_stack_basic)
+MU_TEST(_stack_clone)
 {
-  //the stack only ever holds memref values
 
   memref st = stack_init(1);
   memref a = malloc_int(42);
   stack_push(st,a);
-  memref b = stack_peek(st);
-  mu_check(a.data.i == b.data.i);
-  memref c = stack_pop(st);
+  memref b = malloc_int(58);
+  stack_push(st,b);
 
-  for(int i = 0; i < 1000; i ++)
-    {
-      stack_push(st,a);
-    }
+  memref c = stack_clone(st);
+
+  mu_check(stack_peek(c).data.i == 58);
+
+  stack_pop(c);
+
+  mu_check(stack_peek(c).data.i == 42);
+  mu_check(stack_peek(st).data.i == 58);
+
   
-  for(int i = 0; i < 1000; i ++)
-    {
-      stack_pop(st);
-    } 
+  
 }
 
-
-MU_TEST(_stack_complex)
+MU_TEST(_stack_basic)
 {
-  //stack and hash interaction
-  /* refstack st = stack_init(1); */
-  /* memref h = int_to_memref(1); */
-  /* stack_push(&st, h); */
-  
+    memref st = stack_init(1);
+    memref st2 = stack_init(1);
+
+    refstack* rs1 = deref(&st);
+    refstack* rs2 = deref(&st2);
+    
+    rs1->pool->owner = &rs1->pool;
+    rs2->pool->owner = &rs2->pool;
+
+    for(int i = 0; i < 1000; i++)
+      {
+        printf("%i\n", i);
+        printf("A\n");
+        stack_push(st, int_to_memref(i));
+        printf("B\n");
+        stack_push(st2, int_to_memref(i));
+      }
 }
 
 MU_TEST(_vm_a)
 {
-  vm v = init_vm();  
-  run(&v);  
+  /* vm v = init_vm();   */
+  /* run(&v);   */
 
 }
 
-MU_TEST(_gc_main)
-{
-  gc_print_stats();
-  memref st = hash_init(0);
-  memref sa = ra_init_str("A");
-  hash_set(st,int_to_memref(1),sa);
-  for(int i = 0; i < 100; i ++)
-    {
-      ra_init_str("B");
-    }
-  gc_print_stats();
-  int off = 0;
-  for(int i = 0; i < 50; i++)
-    {
-      off = gc_clean_step(off);
-      gc_print_stats();
-    }
+/* MU_TEST(_gc_main) */
+/* { */
+/*   gc_print_stats(); */
+/*   memref st = hash_init(0); */
+/*   memref sa = ra_init_str("A"); */
+/*   hash_set(st,int_to_memref(1),sa); */
+/*   for(int i = 0; i < 100; i ++) */
+/*     { */
+/*       ra_init_str("B"); */
+/*     } */
+/*   gc_print_stats(); */
+/*   int off = 0; */
+/*   for(int i = 0; i < 50; i++) */
+/*     { */
+/*       off = gc_clean_step(off); */
+/*       gc_print_stats(); */
+/*     } */
     
   
-}
+/* } */
 
 MU_TEST_SUITE(gc_suite)
 {
@@ -251,7 +304,7 @@ MU_TEST_SUITE(test_suite)
   //  fixed_pool_init(&int_memory,sizeof(int),100);
   fixed_pool_init(&ref_memory,sizeof(ref),1); //10mb of refs
   fixed_pool_init(&hash_memory,sizeof(refhash),1024);
-  fixed_pool_init(&scope_memory,sizeof(scope),10);
+  fixed_pool_init(&scope_memory,sizeof(scope),1);
   fixed_pool_init(&func_memory,sizeof(function),10);
 
   fixed_pool_init(&stack_memory,sizeof(refstack),1);
@@ -267,13 +320,15 @@ MU_TEST_SUITE(test_suite)
   /* MU_RUN_TEST(_dyn_realloc); */
   /* MU_RUN_TEST(_ra_basic); */
   /* MU_RUN_TEST(_ra_remove); */
-  MU_RUN_TEST(_ra_split);
+  /* MU_RUN_TEST(_ra_clone); */
+  /* MU_RUN_TEST(_ra_split); */
   /* MU_RUN_TEST(_ra_complex); */
-  /* MU_RUN_TEST(_stack_basic); */
+  /* MU_RUN_TEST(_stack_clone); */
+  MU_RUN_TEST(_stack_basic);
   /* MU_RUN_TEST(_stack_complex); */
   DL("core tests finihsed\n");
  
-     MU_RUN_TEST(_vm_a);
+  //     MU_RUN_TEST(_vm_a);
 }
 
 
@@ -282,7 +337,7 @@ int main(int argc, char *argv[])
 {
   /* MU_RUN_SUITE(gc_suite); */
 
-  MU_RUN_SUITE(test_suite);
+    MU_RUN_SUITE(test_suite);
   /* MU_RUN_SUITE(refhash_suite); */
 
   /* gc_clean_full(); */
