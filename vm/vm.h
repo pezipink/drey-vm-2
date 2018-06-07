@@ -62,7 +62,7 @@ enum opcode
 		isint = 52,
 		isbool = 53,
 		isloc = 54,
-		islist = 55,
+		isarray = 55,
 		createobj = 56,
 		cloneobj = 57,
 		getobj = 58,
@@ -72,13 +72,13 @@ enum opcode
 		delobj = 62,
 		moveobj = 63,
 		p_moveobj = 64,
-		createlist = 65,
-		appendlist = 66,
-		p_appendlist = 67,
-		prependlist = 68,
-		p_prependlist = 69,
-		removelist = 70,
-		p_removelist = 71,
+		createarr = 65,
+		appendarr = 66,
+		p_appendarr = 67,
+		prependarr = 68,
+		p_prependarr = 69,
+		removearr = 70,
+		p_removearr = 71,
 		len = 72,
 		p_len = 73,
 		index = 74,
@@ -125,7 +125,14 @@ enum opcode
 		dbgl = 115,
                 getraw = 116,
                 fork = 117,
-                join = 118
+                join = 118,
+                cons = 119,
+                head = 120,
+                tail = 121,
+                islist = 122,
+                createlist = 123,
+                isfunc = 124
+                
 	};
 
 
@@ -176,7 +183,7 @@ typedef struct vm
   //universe
   int u_max_id;
   hashref u_objs;
-  hashref u_locrefs;
+  //hashref u_locrefs;
   hashref u_locs;
 
   //zmq socket.

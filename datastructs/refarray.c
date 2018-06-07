@@ -337,6 +337,20 @@ void ra_w(memref ra_ref)
       putchar(*data++);
     }
 }
+void ra_w_i(memref ra_ref, int indent)
+{
+  refarray* ra = (refarray*)dyn_pool_get(dyn_memory,get_ref(ra_ref.data.i)->targ_off);
+
+  for(int i = 0; i < indent; i++)
+    {
+      putchar(' ');
+    }
+  char* data = (char*)&ra->data;
+  for(int i = 0; i < ra->element_count; i++)
+    {
+      putchar(*data++);
+    }
+}
 
 void ra_string_free(ref* ra_ref)
 {

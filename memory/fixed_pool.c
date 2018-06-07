@@ -42,9 +42,7 @@ unsigned fixed_pool_alloc(MemoryPool_Fixed* pool)
       *(unsigned*)address = -1;
 
       //rewrite owner's reference address
-      printf("owner was %p\n", *pool->owner);
       *pool->owner = pool;
-      printf("now  %p\n", *pool->owner);
       offset = pool->free_offset;
     }
         
@@ -52,6 +50,8 @@ unsigned fixed_pool_alloc(MemoryPool_Fixed* pool)
   pool->free_offset = *element;
   return offset;
 }
+
+
 
 void fixed_pool_free(MemoryPool_Fixed* pool, unsigned offset)
 {

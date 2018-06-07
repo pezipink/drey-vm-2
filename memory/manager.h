@@ -66,24 +66,24 @@ typedef struct gameobject
   int id;
   stringref visibility;
   hashref props;
-  stringref location_key;
+  stringref location_key;  // current location key
 } gameobject, go;
 
 typedef struct location
 {
-  raref siblings;
-  locref parent;
-  raref children;
-  stringref key;
-  hashref props;
-  hashref objects; // int->go
+  hashref siblings;     // locationref hash of siblings
+  locref parent;        // can be nothing
+  hashref children;     // locationref hash of children
+  stringref key;        // unique location key used in universe hash
+  hashref props;        // misc location property hash
+  hashref objects;      // gameobjects at this location (not recursive to children) indexed by game object id.
 } location;
 
 typedef struct locationref
 {
-  int id;
-  stringref key;
-  hashref props;
+  int id;                 // unique id 
+  stringref target_key;   // location key pointed at
+  hashref props;          // misc properties about this relationship
 } locationref;
 
 //extern MemoryPool_Fixed* int_memory; // ints and pointers
@@ -96,13 +96,17 @@ extern MemoryPool_Fixed* stack_memory; // pool of pools
 extern MemoryPool_Dynamic* dyn_memory;
 extern MemoryPool_Fixed* go_memory;
 extern MemoryPool_Fixed* loc_memory;
-extern MemoryPool_Fixed* loc_ref_memory; 
+extern MemoryPool_Fixed* loc_ref_memory;
+extern MemoryPool_Fixed* list_memory; 
 extern unsigned max_hash_id;
 
 memref malloc_ref(char type, unsigned targ_offset);
 memref malloc_kvp(memref key, memref val, memref next);
 memref malloc_int(int val);
 memref malloc_go();
+memref malloc_loc();
+memref malloc_locref();
+
 void free_ref(ref* ref, int ref_offset);
 
 inline void* deref(memref* ref);
@@ -121,5 +125,7 @@ int memref_gte(memref x, memref y);
 unsigned memref_hash(memref ref);
 
 int is_value(memref x);
+
+memref nullref();
 
 #endif 

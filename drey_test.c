@@ -8,6 +8,7 @@
 #include "datastructs\refhash_test.h"
 #include "datastructs\refstack.h"
 #include "datastructs\refarray.h"
+#include "datastructs\reflist.h"
 /* #include "vm\vm.h" */
 
 static void setup(void)
@@ -229,7 +230,33 @@ MU_TEST(_stack_clone)
   
   
 }
+MU_TEST(_list_basic)
+{
+  memref lr1 = rl_init(); //empty list
 
+  mu_check(lr1.type == List);
+  list* l1 = deref(&lr1);
+  mu_check(l1->head.type == 0);
+  mu_check(l1->tail.type == 0);
+  
+  memref lr2 = rl_init_h_t(int_to_memref(42), lr1);
+  mu_check(lr2.type == List);
+
+  list* l2 = deref(&lr2);
+
+  mu_check(l2->head.type == Int32 && l2->head.data.i == 42);
+  mu_check(l2->tail.type == List && l2->tail.data.i == lr1.data.i);
+  
+  
+  memref lr3 = rl_init_h_t(int_to_memref(58), lr2);
+
+  list* l3 = deref(&lr3);
+
+  mu_check(l3->head.type == Int32 && l3->head.data.i == 58);
+  mu_check(l3->tail.type == List && l3->tail.data.i == lr2.data.i);
+  
+
+}
 MU_TEST(_stack_basic)
 {
     memref st = stack_init(1);
@@ -243,10 +270,10 @@ MU_TEST(_stack_basic)
 
     for(int i = 0; i < 1000; i++)
       {
-        printf("%i\n", i);
-        printf("A\n");
+        /* printf("%i\n", i); */
+        /* printf("A\n"); */
         stack_push(st, int_to_memref(i));
-        printf("B\n");
+        /* printf("B\n"); */
         stack_push(st2, int_to_memref(i));
       }
 }
@@ -278,6 +305,238 @@ MU_TEST(_vm_a)
     
   
 /* } */
+
+enum cell_type
+  {
+    REF = 0,
+    STR = 1,
+    FUN = 2
+  };
+
+typedef struct cell
+{
+  enum cell_type type;
+  union
+  {
+    struct cell* c;
+    int s;
+  } data;
+} cell;
+enum scolog_op
+  {
+    put_struct = 0,
+    set_var = 1,
+    set_val = 2,
+    get_struct = 3,
+    unify_var = 4,
+    unify_val = 5
+  };
+
+cell* deref_cell(cell* start)
+{
+  if(start->type == REF && start->data.c != start)
+    {
+      return deref_cell(start->data.c);
+    }
+  else
+    {
+      return start;
+    }
+}
+
+void push(memref ra, void* val)
+{
+  ra_append(ra, val);
+}
+
+
+void* pop(memref ra)
+{
+  void* res  = ra_nth(ra, ra_count(ra)-1);
+  ra_dec_count(ra);
+  return res;
+}
+
+void unify(cell* a1, cell* a2, memref arity)
+{
+  int fail = 0;
+  memref pdl = ra_init(sizeof(cell),128);
+  cell* d1, *d2;
+  cell* t1, *t2;
+  while(ra_count(pdl) > 0 && !fail)
+    {
+      d1 = deref_cell(pop(pdl));
+      d2 = deref_cell(pop(pdl));
+      if(d1 != d2)
+        {
+          if(d1->type == REF || d2->type == REF)
+            {
+              d1->data.c = d2->data.c;
+            }
+          else
+            {
+              t1 = d1->data.c;
+              t2 = d2->data.c;
+              if(t1->data.s == t2->data.s)
+                {
+                  int a = hash_get(arity, int_to_memref(t1->data.s)).data.i;
+                  t1++;
+                  t2++;
+                  for(int i = 0; i < a; i++)
+                    {
+                      push(pdl, t1 + i);
+                      push(pdl, t2 + i);
+                    }
+                }
+              else
+                {
+                  fail = 1;
+                }
+            }
+          
+        }
+
+    }
+}
+
+MU_TEST(_scolog_a)
+{
+  memref s = hash_init(7);
+  memref arity = hash_init(7);
+  hash_set(s, int_to_memref(0), ra_init_str("f/1"));
+  hash_set(arity, int_to_memref(0), int_to_memref(1));
+
+  hash_set(s, int_to_memref(1), ra_init_str("h/2"));
+  hash_set(arity, int_to_memref(0), int_to_memref(2));
+    
+  hash_set(s, int_to_memref(2), ra_init_str("p/3"));
+  hash_set(arity, int_to_memref(0), int_to_memref(3));
+  memref heap = ra_init(sizeof(cell),128);
+  ra_consume_capacity(heap);
+  cell* reg[6] = {0,0,0,0,0,0};
+  int prog[21] =
+    {0, 0, 4, //put f/1 x4
+     1, 5,    // set x5
+     0, 1, 3, // put h/2 x3
+     1, 2,    // set x2
+     2, 5,    // set x5
+     0, 2, 3, // put p/3 x1
+     2, 2,    // set x2
+     2, 3,    // set x3
+     2, 4    // set x4
+    };
+
+  cell* h = ra_nth(heap,0);
+  cell* c;
+  cell* S;
+  int mode = 0;
+  for(int i = 0; i < 21; i++)
+    {
+      switch(prog[i])
+        {
+        case put_struct:
+          h->type = STR;
+          h->data.c = h + 1;
+          h++;
+          h->type = FUN;
+          h->data.s = prog[++i];
+          reg[prog[++i]] = h;
+          h++;
+          break;
+
+        case set_var:
+          h->type = REF;
+          h->data.c = h;
+          reg[prog[++i]] = h;
+          h++;
+          break;
+
+        case set_val:
+          *h = *reg[prog[++i]];
+          h++;
+          break;
+
+        case get_struct:
+          int str = prog[++i];
+          c = deref_cell(reg[prog[++i]]);
+          if(c->type == REF)
+            {
+              h->type = STR;
+              h->data.c = h + 1;
+              c->data.c = h;
+              h++;
+              h->type = FUN;
+              h->data.s = str;
+              h++;
+              mode=1;
+            }
+          else if(c->type == STR)
+            {
+              if((c++)->data.s == str)
+                {
+                  *S = *c->data.c;
+                  mode = 0;
+                }
+              else
+                {
+                  printf("FAILURE b");
+                }
+            }
+          else
+            {
+              printf("FAILURE c");
+              return;
+            }
+          break;
+
+        case unify_var:
+          if(mode == 0) // read
+            {
+              *reg[prog[++i]] = *S;
+            }
+          else
+            {
+              h->type = REF;
+              h->data.c = h;
+              reg[prog[++i]] = h;
+              h++;
+              
+            }
+          S++;
+          break;
+
+        case unify_val:
+          if(mode == 0)
+            {
+              unify(reg[prog[++i]],S,arity);
+            }
+          else
+            {
+              *h = *reg[prog[++i]];
+              h++;
+            }
+          S++;
+          break;
+          
+        }
+    }
+
+
+  
+  h = ra_nth(heap,0);
+  int index = 0;
+  while(index < 12)
+    {
+      printf("address %p index 1 type %i\n", h, h->type);
+      if(h->type == FUN)
+        printf("string index %i\n", h->data.s);
+      else
+        printf("cell %p\n", h->data.c);
+      index++;
+      h++;
+    }
+}
+
 
 MU_TEST_SUITE(gc_suite)
 {
@@ -313,6 +572,7 @@ MU_TEST_SUITE(test_suite)
   fixed_pool_init(&go_memory,sizeof(gameobject),10);
   fixed_pool_init(&loc_memory,sizeof(location),10);
   fixed_pool_init(&loc_ref_memory,sizeof(locationref),10);
+  fixed_pool_init(&list_memory,sizeof(list),10);
 
   /* MU_RUN_TEST(_dyn_resize); */
   /* MU_RUN_TEST(_dyn_resize_2); */
@@ -324,7 +584,9 @@ MU_TEST_SUITE(test_suite)
   /* MU_RUN_TEST(_ra_split); */
   /* MU_RUN_TEST(_ra_complex); */
   /* MU_RUN_TEST(_stack_clone); */
-  MU_RUN_TEST(_stack_basic);
+  MU_RUN_TEST(_list_basic);
+  MU_RUN_TEST(_scolog_a);
+    /* MU_RUN_TEST(_stack_basic); */
   /* MU_RUN_TEST(_stack_complex); */
   DL("core tests finihsed\n");
  
@@ -337,7 +599,7 @@ int main(int argc, char *argv[])
 {
   /* MU_RUN_SUITE(gc_suite); */
 
-    MU_RUN_SUITE(test_suite);
+  MU_RUN_SUITE(test_suite);
   /* MU_RUN_SUITE(refhash_suite); */
 
   /* gc_clean_full(); */

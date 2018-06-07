@@ -4,6 +4,7 @@
 #include "memory\manager.h"
 #include "datastructs\refhash.h"
 #include "datastructs\refstack.h"
+#include "datastructs\reflist.h"
 #include "global.h"
 #include "zmq.h"
 #include "zhelpers.h"
@@ -22,12 +23,13 @@ int main(int argc, char *argv[])
   fixed_pool_init(&hash_memory,sizeof(refhash),1);
   fixed_pool_init(&scope_memory,sizeof(scope),1);
   fixed_pool_init(&func_memory,sizeof(function),1);
-  fixed_pool_init(&stack_memory,sizeof(refstack),1);
+  fixed_pool_init(&stack_memory,sizeof(refstack),10);
   fixed_pool_init(&kvp_memory,sizeof(key_value),1);
-  dyn_pool_init(&dyn_memory,sizeof(int) * 1);
+  dyn_pool_init(&dyn_memory,sizeof(int) * 1024 * 1024);
   fixed_pool_init(&go_memory,sizeof(gameobject),1);
   fixed_pool_init(&loc_memory,sizeof(location),10);
   fixed_pool_init(&loc_ref_memory,sizeof(locationref),10);
+  fixed_pool_init(&list_memory,sizeof(list),1);
 
   
   

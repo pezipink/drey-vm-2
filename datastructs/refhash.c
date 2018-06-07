@@ -85,13 +85,13 @@ int hash_try_get(memref* result, memref hash, memref key)
 }
 
 
-void print_hash(memref hashref)
+void print_hash(memref hashref, int indent)
 {  
   refhash* hash = deref(&hashref);
   int bucketCount = ra_count(hash->buckets);
   key_value* kvp = 0;
   int eleCount = 0;
-  printf("hash contents:\n");
+  printf("%*s{\n", indent, "");
   for(int i = 0; i < bucketCount; i++)
     { 
       memref r = ra_nth_memref(hash->buckets, i);
@@ -102,20 +102,26 @@ void print_hash(memref hashref)
               kvp = deref(&r);
               if(kvp->key.type == String)
                 {                  
-                  ra_w(kvp->key);
-                }
+                  ra_w_i(kvp->key, indent);
+                }              
               else
                 {
-                  printf("%i",kvp->key.data.i);
+                  printf("%*i",indent, kvp->key.data.i);
                 }
               printf(" : ");
               if(kvp->val.type == String)
                 {                  
                   ra_w(kvp->val);
                 }
+              else if(kvp->val.type == GameObject)
+                {
+                  printf("\n");
+                  gameobject* gop = deref(&kvp->val);
+                  print_hash(gop->props, indent + 4);
+                }
               else
                 {
-                  printf("%i",kvp->val.data.i);
+                  printf("%*i",indent,kvp->val.data.i);
                 }
 
               printf("\n");
@@ -137,6 +143,7 @@ void print_hash(memref hashref)
           break;
         }
     }
+    printf("%*s}\n", indent, "");
 }
 
 memref hash_get(memref hash, memref key)
@@ -166,7 +173,7 @@ memref hash_get(memref hash, memref key)
     {
       printf("couldn't find key ");
       ra_wl(key);
-      print_hash(hash);
+      print_hash(hash,0);
     }
   assert(memref_equal(key,data->key));
   TL("hash_get exit\n");
@@ -285,7 +292,7 @@ memref hash_get_keys(memref hashref)
           while(true)
             {
               kvp = deref(&r);
-              ra_wl(kvp->key);
+              //              ra_wl(kvp->key);
               ra_set_memref(ra_ret, eleCount, &kvp->key);
               eleCount++;
               if(kvp->next.type == KVP)

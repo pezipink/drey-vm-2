@@ -2,6 +2,7 @@
 #include "..\global.h"
 #include "..\datastructs\refarray.h"
 #include "..\datastructs\refhash.h"
+#include "..\datastructs\reflist.h"
 
 MemoryPool_Fixed* ref_memory = 0;
 MemoryPool_Fixed* hash_memory = 0;
@@ -13,6 +14,7 @@ MemoryPool_Fixed* stack_memory = 0;  // pool of pools!
 MemoryPool_Fixed* go_memory = 0;
 MemoryPool_Fixed* loc_memory = 0;
 MemoryPool_Fixed* loc_ref_memory = 0; 
+MemoryPool_Fixed* list_memory = 0;
 
 unsigned max_hash_id = 1;
 
@@ -60,20 +62,21 @@ memref malloc_go(int id)
   gameobject* go = (gameobject*)fixed_pool_get(go_memory,go_off);  
   go->props = hash_init(3);
   go->id = id;
+  go->location_key = nullref();
   //alloc ref to it
   memref ref = malloc_ref(GameObject,go_off);
   TL("malloc_go exit\n");
   return ref;
 }
 
-memref malloc_location(stringref key)
+memref malloc_loc(stringref key)
 {
   TL("malloc_loc entry\n");
   int loc_off = fixed_pool_alloc(loc_memory);
   location* loc = (location*)fixed_pool_get(loc_memory,loc_off);  
   loc->key = key;
-  loc->siblings = ra_init(sizeof(memref),3);
-  loc->children = ra_init(sizeof(memref),3);
+  loc->siblings = hash_init(3);
+  loc->children = hash_init(3);
   loc->props = hash_init(3);
   loc->objects = hash_init(3);
   memref ref = malloc_ref(Location,loc_off);
@@ -82,11 +85,12 @@ memref malloc_location(stringref key)
 }
 
 
-memref malloc_location_ref()
+memref malloc_locref()
 {
   TL("malloc_locref entry\n");
   int loc_off = fixed_pool_alloc(loc_ref_memory);
-  locationref* loc = (locationref*)fixed_pool_get(loc_ref_memory,loc_off);    
+  locationref* loc = (locationref*)fixed_pool_get(loc_ref_memory,loc_off);
+  loc->target_key = nullref();
   loc->props = hash_init(3);
   memref ref = malloc_ref(LocationReference,loc_off);
   TL("malloc_locref exit\n");
@@ -103,6 +107,7 @@ memref malloc_int(int val)
   TL("malloc_int exit\n");
   return v;
 }
+
 void free_ref(ref* ref, int ref_offset)
 {
   TL("free_ref enter for offset %i type %i\n", ref_offset, ref->type);
@@ -137,6 +142,10 @@ void free_ref(ref* ref, int ref_offset)
       TL("freeing scope..\n");
       fixed_pool_free(scope_memory, ref->targ_off);
       break;
+    case List:
+      TL("freeing list..\n");
+      fixed_pool_free(list_memory, ref->targ_off);
+      break;
     case KVP:
       TL("freeing kvp..\n");
       fixed_pool_free(kvp_memory, ref->targ_off);
@@ -152,6 +161,7 @@ void free_ref(ref* ref, int ref_offset)
     default:
       DL("didnt know how to free memory type %i\n", ref->type);
       return;
+      
     }
 
   
@@ -171,6 +181,8 @@ void* deref(memref* ref)
       break;
     case KVP:
       return fixed_pool_get(kvp_memory, get_ref(ref->data.i)->targ_off);
+    case List:
+      return fixed_pool_get(list_memory, get_ref(ref->data.i)->targ_off);
     case Array:
     case String:
       return dyn_pool_get(dyn_memory, get_ref(ref->data.i)->targ_off);
@@ -272,8 +284,26 @@ int memref_gte(memref x, memref y)
 }
 int memref_equal(memref x, memref y)
 {
+  if(x.type == y.type && !is_value(x))
+    {
+      if(x.data.i == y.data.i)
+        {
+          return true;
+        }
+    }
   switch(x.type)
     {
+    case 0:
+      //null
+      if(y.type == 0)
+        {
+          return true;
+        }
+      else
+        {
+          return false;
+        }
+      break;
     case Int32:
       switch(y.type)
         {
@@ -287,6 +317,16 @@ int memref_equal(memref x, memref y)
           else
             {
               return 0;
+            }
+        case List:
+          list* lst = deref(&y);
+          if(lst->head.type == 0 && lst->tail.type == 0 && x.data.i == 0)
+            {
+              return true;
+            }
+          else
+            {
+              return false;
             }
         case Bool:
           int* iba = (int*)deref(&x);
@@ -307,7 +347,8 @@ int memref_equal(memref x, memref y)
         default:
           break;
         }
-
+      break;
+      
     case Bool:
       switch(y.type)
         {
@@ -334,7 +375,7 @@ int memref_equal(memref x, memref y)
         default:
           break;
         }
-
+      break;
     case String:
     case Array:
       switch(y.type)
@@ -355,7 +396,36 @@ int memref_equal(memref x, memref y)
         default:
           break;
         }
-      
+      break;
+    case List:
+      switch(y.type)
+        {
+        case 0:
+        case Int32:
+          list* lst = deref(&x);
+          if(lst->head.type == 0 && lst->tail.type == 0 && y.data.i == 0)
+            {
+              return 1;
+            }
+          else
+            {
+              return 0;
+            }
+          break;
+        default:
+          DL("equals not implemented for list (%i)and %i\n",x.type, y.type);
+          break;
+        }
+      break;
+    case Function:
+      switch(y.type)
+        {
+        case Int32:
+          return 0;
+        default:
+          DL("equals not implemented for function and %i\n", y.type);
+        }
+      break;
     default:
       if(x.type >= Hash && y.type >= Hash && x.type == y.type)
         {
@@ -436,6 +506,7 @@ unsigned memref_hash(memref ref)
       break;
 
     case String:
+    case Array:
       refarray* ra = deref(&ref);
       unsigned h = fnv_hash(&ra->data,sizeof(char) * ra->element_count);
       return h;
@@ -464,6 +535,9 @@ void print_ref(memref mr)
 {
   switch(mr.type)
     {
+    case 0:
+      printf("()");
+      break;
     case Int32:
       printf("%i",mr.data.i);
       break;
@@ -479,8 +553,58 @@ void print_ref(memref mr)
         }
       putchar(']');
       break;
+    case Function:
+      printf("F");
+      break;
+    case GameObject:
+      gameobject *gop = deref(&mr);
+      print_hash(gop->props, 0);
+      break;
+    case List:
+      putchar('{');
+      while(1)
+        {
+          if(mr.type == 0)
+            {
+              break;
+            }
+          list* lst = deref(&mr);
+          if(lst->head.type != 0)
+            {
+              print_ref(lst->head);
+            }
+          if(lst->tail.type == List)
+            {
+              list* nxt = deref(&lst->tail);         
+              if(nxt->head.type == 0)
+                {
+                  break;
+                }
+         
+              printf(" :: ");
+              mr = lst->tail;
+            }
+          else
+            {
+              printf(" :: ");
+              print_ref(lst->tail);
+              break;
+            }
+        }
+      printf(" }");
+      break;
+      
+
     default:
       printf("dbgl not implemented for type %i\n", mr.type);
 
     }
+}
+
+memref nullref()
+{
+  memref mr;
+  mr.type = 0;
+  mr.data.d = 0; 
+  return mr;
 }

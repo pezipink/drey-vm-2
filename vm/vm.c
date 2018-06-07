@@ -5,10 +5,11 @@
 #include "../datastructs/refstack.h"
 #include "../datastructs/refhash.h"
 #include "../datastructs/refarray.h"
+#include "../datastructs/reflist.h"
 #include "vm.h"
 #include<assert.h>
 #include<stdio.h>
-
+#include<stdlib.h>
 
 void print_stack(exec_context* ec)
 {
@@ -166,6 +167,10 @@ vm init_vm(void* socket)
 {
   printf("1 reference pool at %p\n",ref_memory);
   vm v;
+  
+  time_t t;
+  srand((unsigned) time(&t));
+  
   v.ip_machine = socket;
   v.string_table = hash_init(100);
   
@@ -177,7 +182,7 @@ vm init_vm(void* socket)
   v.cycle_count = 0;
 
   v.num_players = 0;
-  v.req_players = 2; //todo: load this somehow
+  v.req_players = 1; //todo: load this somehow
   
   fiber f = init_fiber(0);
   ra_append(v.fibers,&f);
@@ -189,7 +194,7 @@ vm init_vm(void* socket)
   //universe
   v.u_max_id = 0;
   v.u_objs = hash_init(3);
-  v.u_locrefs = hash_init(3);
+  //  v.u_locrefs = hash_init(3);
   v.u_locs = hash_init(3);
 
   //global state object
@@ -444,7 +449,9 @@ memref load_var(scope* s, memref key)
     }
   else
     {
-      DIE("!!!!!!!! CRITICAL ERROR, cOULD NOT FIND VAL\n");
+      printf("!!!!!!!! CRITICAL ERROR, cOULD NOT FIND VAL ");
+      ra_w(key);
+      DIE("!");
     }
 
   memref r;
@@ -473,10 +480,16 @@ memref load_prop(memref key, memref obj)
   switch(obj.type)
     {
     case GameObject:
-      gameobject* g = deref(&obj);
+      gameobject *g = deref(&obj);
       return hash_get(g->props,key);
     case Hash:
       return hash_get(obj,key);
+    case Location:
+      location *l = deref(&obj);
+      return hash_get(l->props,key);
+    case LocationReference:
+      locationref *lr = deref(&obj);
+      return hash_get(lr->props,key);
     default:
       printf("invalid type %i\n", obj.type);
       break;
@@ -496,6 +509,14 @@ void store_prop(vm* vm, memref val, memref key, memref obj)
       gameobject* g = deref(&obj);
       hash_set(g->props,key,val);
       return;
+    case Location:
+      location *l = deref(&obj);
+      hash_set(l->props,key,val);
+      return;
+    case LocationReference:
+      locationref *lr = deref(&obj);
+      hash_set(lr->props,key,val);
+      return;
     default:
       printf("invalid type %i\n", obj.type);
       break;
@@ -506,7 +527,7 @@ void store_prop(vm* vm, memref val, memref key, memref obj)
 }
 
 
-bool ref_contains(memref obj, memref key)
+inline bool ref_contains(memref obj, memref key)
 {
   switch(obj.type)
     {
@@ -522,6 +543,134 @@ bool ref_contains(memref obj, memref key)
   return 0;
 }
 
+inline memref unpack_location(vm *const vm, memref source)
+{
+
+  if(source.type == String)
+    {
+      memref out = nullref();
+      if(!hash_try_get(&out, vm->u_locs, source))
+        {
+          DIE("location key did not exist in universe!");
+        }
+      return out;
+    }
+  else if(source.type == Location)
+    {
+      return source;
+    }
+  else if(source.type == LocationReference)
+    {
+      locationref *lrp;
+      lrp = deref(&source);
+      memref out = nullref();
+      if(!hash_try_get(&out, vm->u_locs, lrp->target_key))
+        {
+          DIE("location key did not exist in universe!");
+        }
+      return out;      
+    }
+
+  DIE("! source type was %i in unpack location\n", source.type );
+  return nullref();
+}
+
+void get_nested_gameobjects(memref ra_out, memref to_search)
+{
+  // retrieve nested game objects - we need to check properties of game objects
+  // arrays and hashes (TODO: probably the new lists too)
+  if(to_search.type == GameObject)
+    {
+      ra_append_memref(ra_out, to_search);
+      gameobject* go = deref(&to_search);
+      get_nested_gameobjects(ra_out, go->props);
+    }
+  else if(to_search.type == Array)
+    {
+      int max = ra_count(to_search);
+      for(int i = 0; i < max; i++)
+        {
+          get_nested_gameobjects(ra_out, ra_nth_memref(to_search,i));
+        }
+    }
+  else if(to_search.type == Hash)
+    {
+      get_nested_gameobjects(ra_out, hash_get_values(to_search));
+    }      
+}
+
+void move_gameobject(vm *const vm, memref go, memref loc)
+{
+  assert(go.type == GameObject);
+  assert(loc.type == Location);
+  gameobject *gop;
+  location *locp;
+  gop = deref(&go);
+  locp = deref(&loc);
+  // moving to a location always causes an object to exist in the universe   
+  if(!hash_contains(vm->u_objs,int_to_memref(gop->id)))
+    {
+      DL("adding %i to uiniverse..\n", gop->id);
+      hash_set(vm->u_objs, int_to_memref(gop->id), go);
+      //TODO: Announce delta
+    }
+
+  // remove the object from its current location where applicable
+  if(gop->location_key.type == String && !memref_equal(gop->location_key,locp->key))
+    {
+      memref current = hash_get(vm->u_locs, gop->location_key);
+      location *lc = deref(&current);
+      hash_remove(lc->objects, int_to_memref(gop->id));
+    }
+
+  if(loc.type == 0 )
+    {
+      //TODO: handle this case. should we remove from universe here?
+      DIE("not implemented moving game object to null");
+    }
+  
+  // add object to the new location
+  gop->location_key = locp->key;
+  hash_set(locp->objects, int_to_memref(gop->id), go);
+  
+  memref more = ra_init(sizeof(memref), 3);
+  get_nested_gameobjects(more, go);
+  int max = ra_count(more);
+  gameobject *gop2;
+  for(int i = 0; i < max; i++)
+    {
+      memref current = ra_nth_memref(more, i);
+      gop2 = deref(&current);
+      if(!hash_contains(vm->u_objs,int_to_memref(gop2->id)))
+        {
+          DL("adding %i to uiniverse..\n", gop2->id);
+          hash_set(vm->u_objs, int_to_memref(gop2->id), current);
+          //TODO: Announce delta
+        }
+
+      if(gop->location_key.type == String && !memref_equal(gop2->location_key,locp->key))
+        {
+          memref current = hash_get(vm->u_locs, gop2->location_key);
+          location *lc = deref(&current);
+          hash_remove(lc->objects, int_to_memref(gop2->id));
+          //TODO: announce
+        }
+
+      if(loc.type == 0 )
+        {
+          //TODO: handle this case. should we remove from universe here?
+          DIE("not implemented moving game object to null");
+        }
+  
+      // add object to the new location
+      gop2->location_key = locp->key;
+      hash_set(locp->objects, int_to_memref(gop2->id), current);
+
+      //TODO: announce          
+      
+    }
+  
+}
 
 int step(vm* const vm, int fiber_index)
 {
@@ -532,11 +681,13 @@ int step(vm* const vm, int fiber_index)
   //  printf("  %i  ", o);
   int i;
   memref ma, mb, mc, md;
-  memref* mp;
+  memref *mp;
   memref str;
-  gameobject* gop;
-  fiber* fib;
-  scope* scope;
+  gameobject *gop;
+  location *locp, *locp2;
+  locationref *locrefp;
+  fiber *fib;
+  scope *scope;
 
   //print_stack(ec);
     switch(o)
@@ -564,10 +715,10 @@ int step(vm* const vm, int fiber_index)
       READ_INT;
       int x = i & 0xFFFF;
       int y = (i >> 16) & 0xFFFF;
-      memref* head = stack_peek_ref(ec->eval_stack);
-      memref temp = *(head - x);
-      *(head - x) = *(head-y);
-      *(head - y) = temp;            
+      memref* rhead = stack_peek_ref(ec->eval_stack);
+      memref temp = *(rhead - x);
+      *(rhead - x) = *(rhead-y);
+      *(rhead - y) = temp;            
       break;
       
     case dup:
@@ -600,6 +751,7 @@ int step(vm* const vm, int fiber_index)
     case ldvar:
       VL("ldvar ");
       READ_STR;
+      VL("read str\n");
       #ifdef VM_DEBUG
       ra_wl(str);
       #endif
@@ -721,7 +873,8 @@ int step(vm* const vm, int fiber_index)
       if(ma.type == Int32 && mb.type == Int32)
         {
           PUSH(int_to_memref( ma.data.i + mb.data.i));
-        }           
+        }
+      // you can "add" strings
       else if(ma.type == String && mb.type == String)
         {
           int lena = ra_count(ma);
@@ -736,9 +889,10 @@ int step(vm* const vm, int fiber_index)
           REFRESH_EC;
           PUSH(mc);
         }
+      // you can also "add" an int to a string (1 + "a" == "1a")
       else if(ma.type == Int32 && mb.type == String)
         {
-          printf("BREAK HERE!\n");
+          //printf("BREAK HERE!\n");
           i = snprintf(NULL, 0,"%d",ma.data.i);
           md = ra_init_raw(sizeof(char),i,String);
           ra_consume_capacity(md);
@@ -754,6 +908,7 @@ int step(vm* const vm, int fiber_index)
           REFRESH_EC;
           PUSH(mc);
         }
+      // TODO: reverse case of above, String + Int
       else
         {
           DIE("add only supports ints and strings not %i + %i!",ma.type, mb.type);
@@ -805,28 +960,41 @@ int step(vm* const vm, int fiber_index)
       break;
       
     case _pow:
-      DL("\t\t!!pow Not implemented\n");
+      DIE("\t\t!!pow Not implemented\n");
       break;
     case tostr:
-      DL("\t\t!!tostr Not implemented\n");
+      DIE("\t\t!!tostr Not implemented\n");
       break;
     case toint:
-      DL("\t\t!!toint Not implemented\n");
+      DIE("\t\t!!toint Not implemented\n");
       break;
     case rndi:
-      DL("\t\t!!rndi Not implemented\n");
+      TL("\t\trndi");
+      ma = POP;
+      assert(ma.type == Int32);
+      mb = POP;
+      assert(mb.type == Int32);
+      int mini = ma.data.i;
+      int maxi = mb.data.i;
+      int diff = maxi - mini;
+      if(diff == 0)
+        {
+          DIE("divide by zero in rndi");
+        }
+      int rnd = rand() % diff;
+      PUSH(int_to_memref(rnd + mini));
       break;
     case startswith:
-      DL("\t\t!!startswith Not implemented\n");
+      DIE("\t\t!!startswith Not implemented\n");
       break;
     case p_startswith:
-      DL("\t\t!!p_startswith Not implemented\n");
+      DIE("\t\t!!p_startswith Not implemented\n");
       break;
     case endswith:
-      DL("\t\t!!endswith Not implemented\n");
+      DIE("\t\t!!endswith Not implemented\n");
       break;
     case p_endswith:
-      DL("\t\t!!p_endswith Not implemented\n");
+      DIE("\t\t!!p_endswith Not implemented\n");
       break;
     case contains:
       VL("contains\n");
@@ -857,16 +1025,16 @@ int step(vm* const vm, int fiber_index)
       break;
       
     case indexof:
-      DL("\t\t!!indexof Not implemented\n");
+      DIE("\t\t!!indexof Not implemented\n");
       break;
     case p_indexof:
-      DL("\t\t!!p_indexof Not implemented\n");
+      DIE("\t\t!!p_indexof Not implemented\n");
       break;
     case substring:
-      DL("\t\t!!substring Not implemented\n");
+      DIE("\t\t!!substring Not implemented\n");
       break;
     case p_substring:
-      VL("\t\t!!p_substring Not implemented\n");
+      DIE("\t\t!!p_substring Not implemented\n");
       break;
 
     case ceq:
@@ -991,7 +1159,9 @@ int step(vm* const vm, int fiber_index)
       break;
       
     case isobj:
-      VL("\t\t!!isobj Not implemented\n");
+      VL("isobj\n");
+      ma = POP;
+      PUSH(int_to_memref(ma.type == GameObject));              
       break;
       
     case isint:
@@ -1001,15 +1171,15 @@ int step(vm* const vm, int fiber_index)
       break;
       
     case isbool:
-      VL("\t\t!!isbool Not implemented\n");
+      DIE("\t\t!!isbool Not implemented\n");
       break;
       
     case isloc:
-      DL("\t\t!!isloc Not implemented\n");
+      DIE("\t\t!!isloc Not implemented\n");
       break;
       
-    case islist:
-      VL("islist\n");
+    case isarray:
+      VL("isarray\n");
       ma = POP;
       PUSH(int_to_memref(ma.type == Array));        
       break;
@@ -1048,62 +1218,70 @@ int step(vm* const vm, int fiber_index)
       PUSH(mb);
       break;
     case getobjs:
-      DL("\t\t!!getobjs Not implemented\n");
+      DIE("\t\t!!getobjs Not implemented\n");
       break;
     case delprop:
-      DL("\t\t!!delprop Not implemented\n");
+      DIE("\t\t!!delprop Not implemented\n");
       break;
     case p_delprop:
-      DL("\t\t!!p_delprop Not implemented\n");
+      DIE("\t\t!!p_delprop Not implemented\n");
       break;
     case delobj:
-      DL("\t\t!!delobj Not implemented\n");
+      DIE("\t\t!!delobj Not implemented\n");
       break;
     case moveobj:
-      DL("\t\t!!moveobj Not implemented\n");
+      TL("\t\t!!moveobj\n");
+      ma = POP; // loc
+      mb = POP; // obj
+      mb = unpack_location(vm,ma);
+      move_gameobject(vm,mb,ma);
       break;
     case p_moveobj:
-      DL("\t\t!!p_moveobj Not implemented\n");
+      TL("\t\t!!p_moveobj\n");
+      ma = POP; // loc
+      mb = PEEK; // obj
+      mb = unpack_location(vm,ma);
+      move_gameobject(vm,mb,ma);
       break;
-    case createlist:
-      VL("createlist\n");
+    case createarr:
+      VL("createarr\n");
       ma = ra_init(sizeof(memref),3);
       REFRESH_EC;
       PUSH(ma);
       break;
-    case appendlist:
-      VL("appendlist\n");
+    case appendarr:
+      VL("appendarr\n");
       ma = POP;
       mb = POP;
       #if DEBUG
       if(mb.type != Array)
         {
-          VL("Execpted list in p_appendlist but got %i\n",mb.type);
+          VL("Execpted array in p_appendlist but got %i\n",mb.type);
         }
       #endif
       ra_append_memref(mb,ma);
 
       break;
-    case p_appendlist:
-      VL("p_appendlist\n");
+    case p_appendarr:
+      VL("p_appendarr\n");
       ma = POP;
       mb = PEEK;      
       #if DEBUG
       if(mb.type != Array)
         {
-          VL("Execpted list in p_appendlist but got %i\n",mb.type);
+          VL("Execpted arr in p_appendlist but got %i\n",mb.type);
         }
       #endif
       ra_append_memref(mb,ma);
       break;
-    case prependlist:
-      DL("\t\t!!prependlist Not implemented\n");
+    case prependarr:
+      DIE("\t\t!!prependarr Not implemented\n");
       break;
-    case p_prependlist:
-      DL("\t\t!!p_prependlist Not implemented\n");
+    case p_prependarr:
+      DIE("\t\t!!p_prependarr Not implemented\n");
       break;
-    case removelist:
-      VL("removelist\n");
+    case removearr:
+      VL("removearr\n");
       ma = POP;
       mb = POP;
       assert(mb.type == Array);
@@ -1120,8 +1298,8 @@ int step(vm* const vm, int fiber_index)
         }
 
       break;
-    case p_removelist:
-      DL("\t\t!!p_removelist Not implemented\n");
+    case p_removearr:
+      DIE("\t\t!!p_removearr Not implemented\n");
       break;
 
     case len:
@@ -1179,7 +1357,7 @@ int step(vm* const vm, int fiber_index)
     case keys:
       VL("keys\n");
       ma = POP;
-      assert(ma.type == Hash || ma.type == GameObject);
+      assert(ma.type == Hash || ma.type == GameObject || ma.type == Location || ma.type == LocationReference);
       if(ma.type == Hash)
         {
           mb = hash_get_keys(ma);
@@ -1188,6 +1366,16 @@ int step(vm* const vm, int fiber_index)
         {
           gop = deref(&ma);
           mb = hash_get_keys(gop->props);
+        }
+      else if(ma.type == Location)
+        {
+          locp = deref(&ma);
+          mb = hash_get_keys(locp->props);
+        }
+      else if(ma.type == LocationReference)
+        {
+          locrefp = deref(&ma);
+          mb = hash_get_keys(locrefp->props);
         }
       else
         {
@@ -1218,64 +1406,234 @@ int step(vm* const vm, int fiber_index)
       PUSH(mb);
       break;
     case syncprop:
-      DL("\t\t!!syncprop Not implemented\n");
+      DIE("\t\t!!syncprop Not implemented\n");
       break;
     case getloc:
-      DL("\t\t!!getloc Not implemented\n");
+      TL("\t\tgetloc\n");
+      ma = POP;
+      assert(ma.type == String || ma.type == LocationReference || ma.type == GameObject);      
+      if(ma.type == String)
+        {
+          mb = ma;
+        }
+      else if(ma.type == LocationReference)
+        {
+          locrefp = deref(&ma);
+          mb = locrefp->target_key;
+        }
+      else if(ma.type == GameObject)
+        {
+          gop = deref(&ma);
+          if(gop->location_key.type == 0)
+            {
+              DIE("gameobject did not exist in a location");
+            }
+          else
+            {
+              mb = gop->location_key;
+            }
+        }
+      PUSH(hash_get(vm->u_locs, mb));
       break;
     case genloc:
-      DL("\t\t!!genloc Not implemented\n");
+      TL("\t\tgenloc\n");
+      ma = POP;
+      assert(ma.type == String);
+      assert(!hash_contains(vm->u_locs,ma));
+      mb = malloc_loc(ma);
+      hash_set(vm->u_locs, ma, mb);
+      PUSH(mb);
+      //TODO: annnouce delta
       break;
     case genlocref:
-      DL("\t\t!!genlocref Not implemented\n");
+      TL("\t\tgenlocref\n");
+      //ma = POP;
+      /* assert(ma.type == String); */
+      /* assert(!hash_contains(vm->u_locrefs,ma)); */
+      mb = malloc_locref();
+      locrefp = deref(&mb);
+      locrefp->id = vm->u_max_id++;
+      //hash_set(vm->u_locrefs, mb, ma);
+      PUSH(mb);
+      //TODO: announce delta            
       break;
     case setlocsibling:
-      DL("\t\t!!setlocsibling Not implemented\n");
+      TL("\t\tsetlocsibling\n");
+      // key :: locref :: relation loc :: host loc      
+      ma = POP;
+      assert(ma.type == String);
+      mb = POP;
+      assert(mb.type == LocationReference);      
+      locrefp = deref(&mb);
+      mc = POP;
+      assert(mc.type == Location);
+      mc = unpack_location(vm,mc);
+      locp = deref(&mc);
+      md = POP;
+      assert(md.type == Location);
+      md = unpack_location(vm,md);
+      locp2 = deref(&md);
+
+      // assign the locref to the host using the key
+      // point the locref to the relation.
+
+      if(hash_contains(locp2->siblings, ma))
+        {
+          DL("warning: location already exists in setlocsibling");
+        }
+      hash_set(locp2->siblings, ma, mb);
+
+      locrefp->target_key = locp->key;
+      
+      //TODO: announce delta            
       break;
     case p_setlocsibling:
-      VL("\t\t!!p_setlocsibling Not implemented\n");
+      TL("\t\tp_setlocsibling\n");
+      // key :: locref :: relation loc :: host loc      
+      ma = POP;
+      assert(ma.type == String);
+      mb = POP;
+      assert(mb.type == LocationReference);      
+      locrefp = deref(&mb);
+      mc = POP;
+      assert(mc.type == Location);
+      mc = unpack_location(vm,mc);
+      locp = deref(&mc);
+      md = PEEK;
+      assert(md.type == Location);
+      md = unpack_location(vm,md);
+      locp2 = deref(&md);
+
+      // assign the locref to the host using the key
+      // point the locref to the relation.
+      locrefp->target_key = locp->key;
+
+      if(hash_contains(locp2->siblings, ma))
+        {
+          DL("warning: location already exists in p_setlocsibling");
+        }
+      hash_set(locp2->siblings, ma, mb);      
+      //TODO: announce delta            
       break;
-    case setlocchild:
-      DL("\t\t!!setlocchild Not implemented\n");
+    case setlocchild:  
+      TL("\t\tsetlocchild\n");
+       // key :: locref :: child loc :: parent loc      
+      ma = POP;
+      assert(ma.type == String);
+      mb = POP;
+      assert(mb.type == LocationReference);      
+      locrefp = deref(&mb);
+      mc = POP;
+      mc = unpack_location(vm,mc);
+      assert(mc.type == Location);
+      locp = deref(&mc);
+      md = POP;
+      md = unpack_location(vm,md);
+      assert(md.type == Location);
+      locp2 = deref(&md);
+
+      //link parent to child
+      locrefp->target_key = locp->key;
+      if(hash_contains(locp2->children, ma))
+        {
+          DL("warning: location already exists in setlochild");
+        }
+      hash_set(locp2->children, ma, mb);
+
+      //link child to parent
+      md = malloc_locref();
+      locrefp = deref(&md);
+      locrefp->id = vm->u_max_id++;
+      locrefp->target_key = locp2->key;
+      locp->parent = md;
+            
+      //TODO: announce delta
       break;
     case p_setlocchild:
-      DL("\t\t!!p_setlocchild Not implemented\n");
+      TL("\t\t!!p_setlocchild\n");
+      // key :: childlocref :: child loc :: parent loc      
+      ma = POP;
+      assert(ma.type == String);
+      mb = POP;
+      assert(mb.type == LocationReference);      
+      locrefp = deref(&mb);
+      mc = POP;
+      assert(mc.type == Location);
+      mc = unpack_location(vm,mc);
+      locp = deref(&mc);
+      md = PEEK;
+      assert(md.type == Location);
+      md = unpack_location(vm,md);
+      locp2 = deref(&md);
+
+      //link parent to child
+      locrefp->target_key = locp->key;      
+      if(hash_contains(locp2->children, ma))
+        {
+          DL("warning: location already exists in p_setlocsibling");
+        }
+      hash_set(locp2->children, ma, mb);
+
+      //link child to parent
+      md = malloc_locref();
+      locrefp = deref(&md);
+      locrefp->id = vm->u_max_id++;
+      locrefp->target_key = locp2->key;
+      locp->parent = md;
+
+      //TODO: Announce deltas
       break;
     case setlocparent:
-      DL("\t\t!!setlocparent Not implemented\n");
+      DIE("\t\t!!setlocparent Not implemented\n");
       break;
     case p_setlocparent:
-      DL("\t\t!!p_setlocparent Not implemented\n");
+      DIE("\t\tp_setlocparent  implemented\n");
       break;
     case getlocsiblings:
-      DL("\t\t!!getlocsiblings Not implemented\n");
+      TL("\t\tgetlocsiblings\n");
+      ma = POP;
+      ma = unpack_location(vm,ma);
+      locp = deref(&ma);
+      PUSH(locp->siblings);
       break;
     case p_getlocsiblings:
-      DL("\t\t!!p_getlocsiblings Not implemented\n");
+      TL("\t\tp_getlocsiblings\n");
+      ma = PEEK;
+      ma = unpack_location(vm,ma);
+      locp = deref(&ma);
+      PUSH(locp->siblings);
       break;
     case getlocchildren:
-      DL("\t\t!!getlocchildren Not implemented\n");
+      DL("\t\t!!getlocchildren \n");
+      ma = POP;
+      ma = unpack_location(vm,ma);
+      locp = deref(&ma);
+      PUSH(locp->children);      
       break;
     case p_getlocchildren:
-      DL("\t\t!!p_getlocchildren Not implemented\n");
+      TL("\t\t!!p_getlocchildren\n");
+      ma = PEEK;
+      ma = unpack_location(vm,ma);
+      locp = deref(&ma);
+      PUSH(locp->children);      
       break;
     case getlocparent:
-      DL("\t\t!!getlocparent Not implemented\n");
+      DIE("\t\t!!getlocparent Not implemented\n");
       break;
     case p_getlocparent:
-      DL("\t\t!!p_getlocparent Not implemented\n");
+      DIE("\t\t!!p_getlocparent Not implemented\n");
       break;
     case setvis:
-      DL("\t\t!!setvis Not implemented\n");
+      DIE("\t\t!!setvis Not implemented\n");
       break;
     case p_setvis:
-      DL("\t\t!!p_setvis Not implemented\n");
+      DIE("\t\t!!p_setvis Not implemented\n");
       break;
     case adduni:
-      DL("\t\t!!adduni Not implemented\n");
+      DIE("\t\t!!adduni Not implemented\n");
       break;
     case deluni:
-      DL("\t\t!!deluni Not implemented\n");
+      DIE("\t\t!!deluni Not implemented\n");
       break;
     case splitat:
       VL("splitat\n");
@@ -1302,13 +1660,13 @@ int step(vm* const vm, int fiber_index)
       break;
       
     case shuffle:
-      DL("\t\t!!shuffle Not implemented\n");
+      DIE("\t\t!!shuffle Not implemented\n");
       break;
     case sort:
-      DL("\t\t!!sort Not implemented\n");
+      DIE("\t\t!!sort Not implemented\n");
       break;
     case sortby:
-      DL("\t\t!!sortby Not implemented\n");
+      DIE("\t\t!!sortby Not implemented\n");
       break;
     case genreq:
       // a request is defined as an array of strings where
@@ -1326,14 +1684,22 @@ int step(vm* const vm, int fiber_index)
       ma = POP;
       assert(ma.type == String); //can remove this restriciton later
       mb = POP;
-      assert(mb.type == String);
+      assert(mb.type == String); //can remove this restriciton later
       mc = POP;
       assert(mc.type == Array);
       ra_append_memref(mc,ma);
       ra_append_memref(mc,mb);
       break;
     case p_addaction:
-      VL("\t\t!!p_addaction Not implemented\n");
+      VL("addaction\n");
+      ma = POP;
+      assert(ma.type == String); //can remove this restriciton later
+      mb = POP;
+      assert(mb.type == String); //can remove this restriciton later
+      mc = PEEK;
+      assert(mc.type == Array);
+      ra_append_memref(mc,ma);
+      ra_append_memref(mc,mb);
       break;
 
     case suspend:
@@ -1392,8 +1758,6 @@ int step(vm* const vm, int fiber_index)
       text = "]}";
       ra_append_str(mc,text, strlen(text));
 
-      printf("sending suspend message to client ");
-      ra_wl(mc);
       printf("\n");
       text = "]}";
       ra_append_str(mc,text, strlen(text));
@@ -1606,6 +1970,62 @@ int step(vm* const vm, int fiber_index)
       fib->awaiting_response = Join;
       return 1;
 
+    case cons:
+      VL("cons \n");
+      ma = POP;
+      mb = POP;
+      //      assert(mb.type == List);
+      mc = rl_init_h_t(ma, mb);
+      PUSH(mc);
+      break;
+
+    case tail:
+      VL("tail \n");
+      ma = POP;
+      //      DL("til type is %i\n", ma.type);
+      assert(ma.type == List);
+      mb = rl_tail(ma);
+      /* mc = rl_tail(mb); */
+      /* list* lst = deref(&mc); */
+      /* if(lst->head.type == 0 && mc->head.type == 0) */
+      /*   { */
+      /*     //this is the end of the list so push the value */
+      /*     //free of its list container */
+          
+      /*   } */
+      /* else */
+      /*   { */
+          PUSH(mb);
+          //        }
+      break;
+
+
+    case head:
+      VL("head \n");
+      ma = POP;
+      /* DL("head type was %i\n", ma.type); */
+      assert(ma.type == List);
+      mb = rl_head(ma);
+      PUSH(mb);
+      break;
+      
+    case islist:
+      VL("islist \n");
+      ma = POP;
+      mb = int_to_memref(ma.type == List ? 1 : 0);
+      PUSH(mb);
+      break;
+
+    case createlist:
+      VL("createlist \n");
+      ma = rl_init();
+      PUSH(ma);
+      break;
+      
+    case isfunc:
+      VL("isfunc\n");
+      ma = POP;
+      PUSH(int_to_memref(ma.type == Function ? 1 : 0));
     }
 
  

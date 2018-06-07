@@ -245,7 +245,7 @@ DWORD WINAPI mediator_thread(LPVOID context)
           size_t optLen = sizeof(more);
           while(1)
             {
-              printf("!\n");
+              //              printf("!\n");
               zmq_msg_t msg;
               zmq_msg_init(&msg);
               zmq_msg_recv(&msg, ip_machine,0);

@@ -4,6 +4,7 @@
 #include "..\datastructs\refhash.h"
 #include "..\datastructs\refarray.h"
 #include "..\datastructs\refstack.h"
+#include "..\datastructs\reflist.h"
 #include "..\vm\vm.h"
 #include <assert.h>
 #include <stdio.h>
@@ -59,6 +60,7 @@ void gc_print_stats()
   DL("Stack\t\t to free %i\tin use %i\n",fcounts[Stack],ucounts[Stack]);
   DL("Scope\t\t to free %i\tin use %i\n",fcounts[Scope],ucounts[Scope]);
    DL("Function\t to free %i\tin use %i\n",fcounts[Function],ucounts[Function]);
+      DL("List node\t to free %i\tin use %i\n",fcounts[List],ucounts[List]);
 
  }
 
@@ -66,7 +68,6 @@ void gc_print_stats()
 //first version uses recursion
 void scan_graph(memref  current, bool action (memref ))
 {
-  TL("scan_graph on type %i\n", current.type);
   if(!action(current))
     {
       return;
@@ -130,6 +131,7 @@ void scan_graph(memref  current, bool action (memref ))
     case Location:
       location* loc = deref(&current);
       scan_graph(loc->siblings,action);
+      scan_graph(loc->children,action);
       scan_graph(loc->parent,action);
       scan_graph(loc->key,action);
       scan_graph(loc->props,action);
@@ -137,7 +139,7 @@ void scan_graph(memref  current, bool action (memref ))
       break;
     case LocationReference:
       locationref* lref = deref(&current);
-      scan_graph(lref->key,action);
+      scan_graph(lref->target_key,action);
       scan_graph(lref->props,action);
       break;
     case Scope:
@@ -164,11 +166,19 @@ void scan_graph(memref  current, bool action (memref ))
         }
       TL("end scanning array\n");
       break;
+
+    case List:
+      TL("scanning list\n");
+      list* lst = deref(&current);
+      scan_graph(lst->head, action);
+      scan_graph(lst->tail, action);
+      TL("end scanning list\n");
+      break;
+
     case Function:
       TL("Scanning function..\n");
       function* f = deref(&current);
       scan_graph(f->closure_scope, action);
-      
       TL("end scanning fucntion\n");
       break;
         
@@ -198,7 +208,6 @@ void scan_graph(memref  current, bool action (memref ))
 
 bool gc_marker(memref mref)
 {
-  //  DL("gc_marker type %i\n", mref.type);
   if(!is_value(mref))
     {
       ref* r = get_ref(mref.data.i);
@@ -206,7 +215,6 @@ bool gc_marker(memref mref)
         {
           return 0;
         }
-      //  DL("\tmarked!\n");
       r->flags = 1;
       return 1;
     }
@@ -243,7 +251,7 @@ void gc_mark_n_sweep(vm* vm)
   
   scan_graph(vm->string_table, gc_marker);
   scan_graph(vm->u_objs,gc_marker);
-  scan_graph(vm->u_locrefs,gc_marker);
+  //  scan_graph(vm->u_locrefs,gc_marker);
   scan_graph(vm->u_locs,gc_marker);
   //for now the roots are just the stack.
 

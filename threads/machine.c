@@ -196,15 +196,18 @@ DWORD WINAPI machine_thread(LPVOID context)
                     {
                       int ret = step(&machine, i);
                       machine.cycle_count++;
-
+                                                                  
                       if(machine.cycle_count % 100 == 0)
                         {
-                          gc_mark_n_sweep(&machine);
+                          //                          gc_mark_n_sweep(&machine);
                         }
                       if(ret == 2)
                         {
                           machine.game_over = true;
                           machine.u_objs = hash_init(3);
+                          gc_print_stats(&machine);
+                          //                          gc_mark_n_sweep(&machine);
+                          gc_print_stats(&machine);
                           break;
                         }
                       if(ret == 3) // signifies a fiber ended
