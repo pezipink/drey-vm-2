@@ -6,82 +6,16 @@
 #include "..\global.h"
 #include "..\zhelpers.h"
 #include "..\vm\vm.h"
+#include "..\vm\debugger.h"
 #include "..\memory\gc.h"
 #include "..\datastructs\refhash.h"
+#include "..\datastructs\refarray.h"
+#include "..\datastructs\json.h"
 #include <assert.h>
 #include <ctype.h>
 #include <string.h>
 
-int parse_response(char** response, int* responseLen, char* data)
-{
-  //response should be json with an id field and string value.
-  //test for this directly for now
-  char* find = "\"id\"";
-  char* start = strstr(data, find);
 
-  if(!start)
-    {
-      return 0;
-    }
-
-  start += 4;
-  int state = 0;  
-
-  while(1)
-    {
-      while(isspace(*start))
-        {
-          start++;
-          if(state == 2)
-            {
-              (*responseLen)++;
-            }
-        }
-      if(*start == 0)
-        {
-          return 0;
-        }
-      switch(state)
-        {
-        case 0:
-          if(*start == ':')
-            {
-              state = 1;
-              start++;
-            }
-          else
-            {
-              return 0;
-            }
-          break;
-
-        case 1:
-          if(*start == '\"')
-            {
-              start++;
-              *response =  start;
-              state = 2;              
-            }
-          else
-            {
-              return 0;
-            }
-          break;
-        case 2:
-          if(*start == '\"')
-            {
-              return 1;
-            }
-          else
-            {
-              (*responseLen)++;
-              start++;
-            }
-          break;
-        }
-    }
-  
-}
 
 DWORD WINAPI machine_thread(LPVOID context)
 {
@@ -132,32 +66,82 @@ DWORD WINAPI machine_thread(LPVOID context)
 
                 case Data:
                 case Debug:
-                case Raw:
                   zmq_msg_init(&msg_data);
                   size = zmq_msg_recv(&msg_data,ip_machine,0);
-                  //                printf("machine: third frame was %i bytes\n", size);
+                  //extract response.
+                  char *json_data = zmq_msg_data(&msg_data);
+                  memref json = json_to_object(&json_data, size);
+                  if(*data == Data)
+                    {
+                      memref id_val = hash_try_get_string_key(json, "id");
 
-                  if(*data == Raw)
-                    {
-                      vm_handle_raw(&machine, zmq_msg_data(&msg_id), id_size, zmq_msg_data(&msg_data), zmq_msg_size(&msg_data));
-                    }
-                  else
-                    {
-                      //extract response.
-                      char* response = 0;
-                      int responseLen = 0;
-                      if(parse_response(&response, &responseLen, zmq_msg_data(&msg_data)))
+                      if(id_val.type != 0)
                         {
-                          //      printf("parse response successfully with %i %i\n", *response, responseLen);
-                          vm_handle_response(&machine, zmq_msg_data(&msg_id), id_size, response, responseLen);
+                          vm_handle_response(&machine, zmq_msg_data(&msg_id), id_size, id_val);
                         }
                       else
                         {
                           printf("did not understand memssage from client\n");
                         }
                     }
-                  hasData = true;
+                  else                    
+                    {
+                      printf("debug message received\n");
+                      int response = handle_debug_msg(json, &machine);
+                      if(response >= 1 )
+                        {
+                          zmq_msg_t msg_id_copy;
+                          zmq_msg_t msg_type_copy;
+                          zmq_msg_t msg_data_new;
+                          zmq_msg_init(&msg_id_copy);
+                          zmq_msg_init(&msg_type_copy);
+                          zmq_msg_copy(&msg_id_copy,&msg_id);
+                          zmq_msg_copy(&msg_type_copy,&msg_type);
 
+                          stringref json_str = object_to_json(json);
+                          msg_data_new = ra_to_msg(json_str);
+                          zmq_msg_send(&msg_id_copy, ip_machine, ZMQ_SNDMORE);
+                          zmq_msg_send(&msg_type_copy, ip_machine, ZMQ_SNDMORE);
+                          zmq_msg_send(&msg_data_new, ip_machine, 0);      
+
+                          zmq_msg_close(&msg_id_copy);
+                          zmq_msg_close(&msg_type_copy);
+                          zmq_msg_close(&msg_data_new);
+                        }
+
+                      if(response >= 2)
+                        {
+                          zmq_msg_t msg_id_copy;
+                          zmq_msg_t msg_type_copy;
+                          zmq_msg_t msg_data_new;
+                          zmq_msg_init(&msg_id_copy);
+                          zmq_msg_init(&msg_type_copy);
+                          zmq_msg_copy(&msg_id_copy,&msg_id);
+                          zmq_msg_copy(&msg_type_copy,&msg_type);
+
+                          memref new_type = build_general_announce(&machine);                                        
+                          stringref json_str = object_to_json(new_type);
+                          ra_wl(json_str);
+                          msg_data_new = ra_to_msg(json_str);
+                          zmq_msg_send(&msg_id_copy, ip_machine, ZMQ_SNDMORE);
+                          zmq_msg_send(&msg_type_copy, ip_machine, ZMQ_SNDMORE);
+                          zmq_msg_send(&msg_data_new, ip_machine, 0);      
+
+                          zmq_msg_close(&msg_id_copy);
+                          zmq_msg_close(&msg_type_copy);
+                          zmq_msg_close(&msg_data_new);
+                        }
+
+                    }
+                  
+                  hasData = true;
+                  
+                  break;
+                case Raw:
+                  zmq_msg_init(&msg_data);
+                  size = zmq_msg_recv(&msg_data,ip_machine,0);
+                  vm_handle_raw(&machine, zmq_msg_data(&msg_id), id_size, zmq_msg_data(&msg_data), zmq_msg_size(&msg_data));
+                  hasData = true;
                   break;
 
                 default:
@@ -194,19 +178,20 @@ DWORD WINAPI machine_thread(LPVOID context)
                   printf("executing fiber %i\n", i);
                   while(1)
                     {
+                      //                      gc_mark_n_sweep(&machine);
                       int ret = step(&machine, i);
                       machine.cycle_count++;
-                                                                  
                       if(machine.cycle_count % 100 == 0)
                         {
-                          //                          gc_mark_n_sweep(&machine);
+                           gc_mark_n_sweep(&machine);
                         }
                       if(ret == 2)
                         {
                           machine.game_over = true;
                           machine.u_objs = hash_init(3);
+                          machine.fibers = ra_init(sizeof(fiber),1);
                           gc_print_stats(&machine);
-                          //                          gc_mark_n_sweep(&machine);
+                          gc_mark_n_sweep(&machine);
                           gc_print_stats(&machine);
                           break;
                         }

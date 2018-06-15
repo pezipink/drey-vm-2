@@ -45,9 +45,6 @@ int read_int(vm* const vm, exec_context * const ec)
   return res;
 }
  
-
-
-
 unsigned int to_int(unsigned char* buf)
 {
   unsigned int x = 0;
@@ -91,11 +88,9 @@ void read_program(vm* const vm)
       lSize -= 4;
       lSize -= len * sizeof(char);
       memref r = ra_init_raw(sizeof(char),len, String);
-
       ra_consume_capacity(r);
       refarray* ra = deref(&r);
       fread(&ra->data,sizeof(char),len,file);
-      //      ra_wl(r);
       hash_set(vm->string_table,int_to_memref(i),r);
     }
   fread(&buffer,sizeof(char),4,file);
@@ -285,7 +280,7 @@ void vm_handle_raw(vm* vm, char* clientid, int clientLen, char* response, int re
     }
 }
 
-void vm_handle_response(vm* vm, char* clientid, int clientLen, char* response, int responseLen)
+void vm_handle_response(vm* vm, char* clientid, int clientLen, stringref choice)
 {
   if(vm->game_over)
     {
@@ -293,7 +288,7 @@ void vm_handle_response(vm* vm, char* clientid, int clientLen, char* response, i
     }
   memref id = ra_init_str_raw(clientid,clientLen);
   memref state_r = hash_get(vm->u_objs,int_to_memref(-1));
-  memref choice = ra_init_str_raw(response,responseLen);
+  //  memref choice = ra_init_str_raw(response,responseLen);
   gameobject* state_go = deref(&state_r);
   memref players = hash_get(state_go->props, ra_init_str("players"));
 
@@ -466,27 +461,10 @@ void replace_var(scope* s, memref key, memref val)
 {
   if(hash_contains(s->locals,key))
     {
-      /* if(val.type == Int32) */
-      /*   { */
-      /*     printf("var found in scope %i replacing with %i\n", s, val.data.i); */
-      /*     memref x = hash_get(s->locals,key); */
-      /*     printf("val currently %i\n", x.data.i); */
-      /*   } */
-      
       hash_set(s->locals,key, val);
-        /*     if(val.type == Int32) */
-        /* { */
-        /*             memref x = hash_get(s->locals,key); */
-        /*   printf("val now %i\n", x.data.i); */
-
-        /* } */
     }
   else if(s->closure_scope.type == Scope)
     {
-      if(val.type == Int32)
-        {
-          printf("var not found, recursing through closure\n");
-        }
       replace_var(deref(&s->closure_scope),key,val);
     }
   else
@@ -813,8 +791,6 @@ int step(vm* const vm, int fiber_index)
       
     case rvar:
       VL("rvar ");
-      print_stack(ec);
-      
       READ_STR;
 #ifdef VM_DEBUG
       ra_wl(str);
@@ -893,8 +869,7 @@ int step(vm* const vm, int fiber_index)
       ma = POP;
       mb = POP;      
       if(ma.type == Int32 && mb.type == Int32)
-        {
-          printf("adding %i and %i\n", ma.data.i, mb.data.i);
+        {        
           PUSH(int_to_memref( ma.data.i + mb.data.i));
         }
       // you can "add" strings
@@ -986,11 +961,10 @@ int step(vm* const vm, int fiber_index)
       DIE("\t\t!!pow Not implemented\n");
       break;
     case tostr:
-      DL("\t\ttostr\n");
+      TL("\t\ttostr\n");
       ma = POP;
       // only support its for now
       assert(ma.type == Int32);
-      printf("called with %i\n", ma.data.i);
       char buffer [33];
       itoa(ma.data.i, buffer, 10);
       mb = ra_init_str(buffer);
@@ -1805,7 +1779,7 @@ int step(vm* const vm, int fiber_index)
       ra_append_str(mc,text, strlen(text));
 
       printf("sending suspend message to client ");
-      ra_wl(mc);
+      //      ra_wl(mc);
       printf("\n");
       
       fib = get_fiber(vm,fiber_index);

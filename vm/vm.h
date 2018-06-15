@@ -179,7 +179,7 @@ typedef struct vm
   int req_players;
   int num_players;
   
-  bool game_over;
+  int game_over;
   //universe
   int u_max_id;
   hashref u_objs;
@@ -191,10 +191,10 @@ typedef struct vm
 } vm;
 
 vm init_vm(void* socket);
-
+zmq_msg_t ra_to_msg(memref ra);
 void vm_client_connect(vm* machine, char* clientid, int len);
 
-void vm_handle_response(vm* machine, char* clientid, int clientLen, char* response, int responseLen);
+void vm_handle_response(vm* machine, char* clientid, int clientLen, memref choice);
 void vm_handle_raw(vm* machine, char* clientid, int clientLen, char* response, int responseLen);
 
 #endif

@@ -291,6 +291,7 @@ static stringref object_to_json_internal(memref obj, stringref json)
       DIE("Unsupported type in object_to_json\n");
       
     }
+  return nullref();
 }
 
 stringref object_to_json(memref obj)

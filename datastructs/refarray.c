@@ -3,6 +3,7 @@
 #include "..\memory\manager.h"
 #include "..\memory\fixed_pool.h"
 
+
 memref ra_init_raw(unsigned element_size, unsigned element_capacity, unsigned int type)
 {  
   TL("ra_init entry\n");
@@ -61,6 +62,7 @@ memref ra_init_str_raw(char* str, int len)
   memcpy(&ra->data,str,len);
   return r;  
 }
+
 
 unsigned ra_count(memref ra_ref)
 {

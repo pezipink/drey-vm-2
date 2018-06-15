@@ -26,6 +26,8 @@ memref hash_get_key_values(memref hash);
 
 int hash_try_get(memref* result, memref hash, memref key);
 
+memref hash_try_get_string_key(memref hash, char* key);
+  
 bool hash_contains(memref hash, memref key);
 
 key_value* hash_get_kvp(memref hash, memref key);

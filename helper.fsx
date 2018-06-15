@@ -75,13 +75,13 @@ let opcodes =
       "delobj";
       "moveobj"; // change parents
       "p_moveobj";
-      "createlist";
-      "appendlist";
-      "p_appendlist";
-      "prependlist";
-      "p_prependlist";
-      "removelist";
-      "p_removelist";
+      "createarr";
+      "appendarr";
+      "p_appendarr";
+      "prependarr";
+      "p_prependarr";
+      "removearr";
+      "p_removearr";
       "len";
       "p_len";
       "index";
@@ -137,7 +137,37 @@ let opcodes =
 
       "dbg";  // prints to the console
       "dbgl"
+      "getraw"
+      "fork"
+      "join"
+      "cons"
+      "head"
+      "tail"
+      "islist"
+      "createlist"
+      "isfunc" 
     ]
+
+let extended = 
+    Set.ofList
+        [
+            "swapn"
+            "ldval"
+            "ldvals"
+            "ldvalb"
+            "ldvar"
+            "stvar"
+            "p_stvar"
+            "rvar"
+            "beq"
+            "bne"
+            "bgt"
+            "blt"
+            "bt"
+            "bf"
+            "branch"
+            "lambda"
+        ]
 
 let genEnum() = 
     let sb = System.Text.StringBuilder()
@@ -172,8 +202,23 @@ let genc() =
     printf "%s" (sb.ToString())
 //    sb.ToString()
 
-
+let genCJsonOpcodes() = 
+    let sb = System.Text.StringBuilder()
+    let (~~) (s:string) = sb.Append(s) |> ignore
+    let (~~~) (s:string) = sb.AppendLine(s) |> ignore
+    opcodes
+    |> List.iteri(fun i s -> 
+        ~~~ "opcode = hash_init(2);"
+        ~~~ (sprintf "hash_set(opcode, ra_init_str(\"code\"), int_to_memref(%i));" i)
+        ~~~ (sprintf "hash_set(opcode, ra_init_str(\"extended\"), int_to_memref(%i));" (if Set.contains s extended then 1 else 0) )
+        ~~~ (sprintf "hash_set(opcodes, ra_init_str(\"%s\"), opcode);" s)
+    )
+    
+    
+    printf "%s" <| sb.ToString()
 
 genc()  
 
 genEnum()
+
+genCJsonOpcodes() 

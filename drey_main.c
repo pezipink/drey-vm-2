@@ -20,8 +20,8 @@ int main(int argc, char *argv[])
   TL("test%i\n", 0);
   int memory = 0;
   
-  fixed_pool_init(&ref_memory,sizeof(ref),1); //10mb of refs
-  fixed_pool_init(&hash_memory,sizeof(refhash),1);
+  fixed_pool_init(&ref_memory,sizeof(ref),2048); 
+  fixed_pool_init(&hash_memory,sizeof(refhash),1024);
   fixed_pool_init(&scope_memory,sizeof(scope),1);
   fixed_pool_init(&func_memory,sizeof(function),1);
   fixed_pool_init(&stack_memory,sizeof(refstack),10);
@@ -31,13 +31,6 @@ int main(int argc, char *argv[])
   fixed_pool_init(&loc_memory,sizeof(location),10);
   fixed_pool_init(&loc_ref_memory,sizeof(locationref),10);
   fixed_pool_init(&list_memory,sizeof(list),1);
-
-  char* strs = " {\"key-4\" : {\"x\":10}}";
-
-  memref o = json_to_object(&strs, strlen(strs) - 1);
-  ra_wl(o);
-  
-  memref s = object_to_json(o);
 
 
   

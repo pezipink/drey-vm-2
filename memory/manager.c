@@ -440,6 +440,18 @@ int memref_equal(memref x, memref y)
 
   return 0;
 }
+
+int memref_cstr_equal(memref str1, char* str2)
+{
+  int len1 = ra_count(str1);
+  int len2 = strlen(str2);
+  if(len1 != len2)
+    {
+      return 0;
+    }
+  return memcmp(ra_data(str1), str2, len2) == 0;
+}
+
 unsigned elf_hash(void *key, int len)
 {
     unsigned char *p = key;

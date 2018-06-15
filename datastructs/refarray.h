@@ -12,6 +12,7 @@ typedef struct refarray
   void* data;
 } refarray;
 
+
 memref ra_init_raw(unsigned element_size, unsigned element_capacity, unsigned int type);
 memref ra_init(unsigned element_size, unsigned element_capacity);
 memref ra_init_str(char* str);

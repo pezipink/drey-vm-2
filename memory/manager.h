@@ -116,6 +116,7 @@ ref* get_ref(unsigned offset);
 memref int_to_memref(int value);
   
 int memref_equal(memref x, memref y);
+int memref_cstr_equal(memref str1, char* str2);
 
 int memref_lt(memref x, memref y);
 int memref_lte(memref x, memref y);

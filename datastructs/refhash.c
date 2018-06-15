@@ -85,6 +85,52 @@ int hash_try_get(memref* result, memref hash, memref key)
 }
 
 
+// looks for a key match using c style string and returns value or nullref
+memref hash_try_get_string_key(memref hash, char* key)
+{
+  refhash* h = (refhash*)deref(&hash);
+  int str_size = strlen(key);
+  unsigned hash_val = fnv_hash(key,str_size);
+  memref bucket_ref = h->buckets;
+  unsigned bucket_index = hash_val % (unsigned)ra_count(bucket_ref);
+  memref bucket = ra_nth_memref(bucket_ref, bucket_index);
+  memref result = nullref();
+  if(bucket.type == 0)
+    {
+      return result;
+    }
+  key_value* data = (key_value*)deref(&bucket);
+
+  while(data->next.type != 0)
+    {
+      
+      if(data->key.type == String)
+        {
+          int key_size = ra_count(data->key);
+          if(key_size == str_size && memcmp(ra_data(data->key), key, str_size) == 0)
+            {              
+              result = data->val;
+            }
+          return result;
+        }
+      data = (key_value*)deref(&data->next);
+    }
+  if(data->key.type == String)
+    {
+      int key_size = ra_count(data->key);
+      if(key_size == str_size && memcmp(ra_data(data->key), key, str_size) == 0)
+        {              
+          result = data->val;
+        }
+      return result;
+    }  
+
+  return result;
+ 
+}
+
+
+
 void print_hash(memref hashref, int indent)
 {  
   refhash* hash = deref(&hashref);
