@@ -238,6 +238,24 @@ void ra_set_memref(memref ra_ref, unsigned nth, memref* new_element)
   memcpy((int)ref,(int)new_element,ra->element_size);
 }
 
+void ra_shuffle(memref ra)
+{
+  // simple fischer-yates shuffle
+  int len = ra_count(ra);
+  int i, j;
+  memref temp, temp2;
+  //todo: improve this by swapping the raw memory instead of using
+  //the get / set functions
+  for(int i = len - 1; i > 0; i--)
+    {
+      j = rand() % (i + 1);
+      temp = ra_nth_memref(ra, j);
+      temp2 = ra_nth_memref(ra, i);
+      ra_set_memref(ra, j, &temp2);
+      ra_set_memref(ra, i, &temp);
+    }  
+}
+
 memref ra_clone(memref ra_ref)
 {
   refarray* old = deref(&ra_ref);

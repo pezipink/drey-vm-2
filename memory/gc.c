@@ -76,51 +76,52 @@ void scan_graph(memref  current, bool action (memref ))
     {
     case Hash:
       TL("scanning hash\n");
-        refhash* hash = deref(&current);
-        action(hash->buckets);
-        int kvp_count = hash->kvp_count;
-        if(kvp_count == 0)
-          {
-            break;
-          }
-        int bucketCount = ra_count(hash->buckets);
-        TL("bucket count %i\n", bucketCount);
-        key_value* kvp = 0;
-        int eleCount = 0;
+      refhash* hash = deref(&current);
+      action(hash->buckets);
+      int kvp_count = hash->kvp_count;
+      if(kvp_count == 0)
+        {
+          break;
+        }
+      int bucketCount = ra_count(hash->buckets);
+      TL("bucket count %i\n", bucketCount);
+      key_value* kvp = 0;
+      int eleCount = 0;
         
-        for(int i = 0; i < bucketCount; i++)
-          {
-            TL("scanning bucket %i\n", i); 
-            memref r = ra_nth_memref(hash->buckets, i);
-            if(r.type == KVP)
-              {
-                while(true)
-                  {
-                    eleCount++;
-                    scan_graph(r, action);
-                    kvp = deref(&r);                  
-                    if(kvp->next.type == KVP)
-                      {
-                        r = kvp->next;
-                      }
-                    else
-                      {
-                        break;
-                      }
-                  }
-              }
-            if(eleCount == kvp_count)
-              {
-                break;
-              }
-          }
-        TL("finished scanning hash\n");
+      for(int i = 0; i < bucketCount; i++)
+        {
+          TL("scanning bucket %i\n", i); 
+          memref r = ra_nth_memref(hash->buckets, i);
+          if(r.type == KVP)
+            {
+              while(true)
+                {
+                  eleCount++;
+                  scan_graph(r, action);
+                  kvp = deref(&r);                  
+                  if(kvp->next.type == KVP)
+                    {
+                      r = kvp->next;
+                    }
+                  else
+                    {
+                      break;
+                    }
+                }
+            }
+          if(eleCount == kvp_count)
+            {
+              break;
+            }
+        }
+      TL("finished scanning hash\n");
         break;
     case KVP:
       //maybe the kvp traverse should go here
       kvp = deref(&current);
       scan_graph(kvp->key,action);
       scan_graph(kvp->val,action);
+      scan_graph(kvp->next,action);
       break;
     case GameObject:
       gameobject* go = deref(&current);
@@ -146,10 +147,10 @@ void scan_graph(memref  current, bool action (memref ))
       TL("scanning scope\n");
       scope* s = deref(&current);
       scan_graph(s->locals, action);
-      if(s->closure_scope.type == Scope)
-        {
+      /* if(s->closure_scope.type == Scope) */
+      /*   { */
           scan_graph(s->closure_scope,action);
-        }
+          //        }
       TL("end scanning scope\n");
       break;
     case Array:

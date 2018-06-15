@@ -31,7 +31,7 @@ void ra_append_char(memref ra_ref, char val);
 void ra_free(ref* ra_ref);
 
 memref ra_nth_memref(memref ra_ref, unsigned nth);
-
+void ra_shuffle(memref );
 void ra_wl(memref ra_ref);
 void ra_w(memref ra_ref);
 void ra_w_i(memref ra_ref, int indent);

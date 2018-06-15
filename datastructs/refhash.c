@@ -119,6 +119,12 @@ void print_hash(memref hashref, int indent)
                   gameobject* gop = deref(&kvp->val);
                   print_hash(gop->props, indent + 4);
                 }
+              else if(kvp->val.type == Array)
+                {
+                  putchar('[');
+                  print_array(kvp->val);
+                  putchar(']\n');
+                }
               else
                 {
                   printf("%*i",indent,kvp->val.data.i);
@@ -475,7 +481,7 @@ void hash_set(memref hash, memref key, memref value)
   unsigned hash_val = memref_hash(key);
   TL("bucket ref offset is %p\n",h->buckets);
   memref bucket_ref = h->buckets;
-  //  TL("bucket ref is of type %i with target %i\n", bucket_ref.type, bucket_ref.data.r->targ_off);
+  //  DL("bucket ref is of type %i with target %i\n", bucket_ref.type, bucket_ref.data.r->targ_off);
   unsigned bucket_index = hash_val % (unsigned)ra_count(bucket_ref);
   TL("bucket index is %i\n",bucket_index);
   memref kvp_curr_ref = ra_nth_memref(bucket_ref, bucket_index);
@@ -497,6 +503,7 @@ void hash_set(memref hash, memref key, memref value)
       key_value* data = (key_value*)deref(&kvp_curr_ref);
       if(memref_equal(key,data->key))
         {
+          TL("key found\n");
           replaced = 1;
         }
       else if(data->next.type != 0)
@@ -510,6 +517,10 @@ void hash_set(memref hash, memref key, memref value)
               }
             data = (key_value*)deref(&data->next);
           }
+          if(memref_equal(key,data->key))
+            {
+              replaced = 1;
+            }          
         }
 
       if(replaced == 1)

@@ -10,6 +10,7 @@
 #include "zhelpers.h"
 #include "threads\mediator.h"
 
+#include "datastructs/json.h"
 
 int main(int argc, char *argv[])
 {
@@ -31,7 +32,14 @@ int main(int argc, char *argv[])
   fixed_pool_init(&loc_ref_memory,sizeof(locationref),10);
   fixed_pool_init(&list_memory,sizeof(list),1);
 
+  char* strs = " {\"key-4\" : {\"x\":10}}";
+
+  memref o = json_to_object(&strs, strlen(strs) - 1);
+  ra_wl(o);
   
+  memref s = object_to_json(o);
+
+
   
   // Prepare our context and sockets
   printf("start\n");

@@ -129,7 +129,7 @@ unsigned dyn_pool_alloc_internal(MemoryPool_Dynamic* pool, unsigned requested_si
 
   if(current->size >= actual_size)
     {
-      if(current->size - actual_size < 5)
+      if(current->size - actual_size <= sizeof(FreeBlock) )
         {
           // not enough room for another useful free block
           // so include all of it

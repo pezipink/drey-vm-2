@@ -46,6 +46,8 @@ int read_int(vm* const vm, exec_context * const ec)
 }
  
 
+
+
 unsigned int to_int(unsigned char* buf)
 {
   unsigned int x = 0;
@@ -305,7 +307,8 @@ void vm_handle_response(vm* vm, char* clientid, int clientLen, char* response, i
           fiber* f = ra_nth(vm->fibers, i);
           if(f->awaiting_response == Choice && memref_equal(f->waiting_client, id))
             {              
-              //check this is a valid response              
+              //check this is a valid response
+              
               if(hash_contains(f->valid_responses, choice))
                 {
                   f->awaiting_response = false;
@@ -463,10 +466,27 @@ void replace_var(scope* s, memref key, memref val)
 {
   if(hash_contains(s->locals,key))
     {
+      /* if(val.type == Int32) */
+      /*   { */
+      /*     printf("var found in scope %i replacing with %i\n", s, val.data.i); */
+      /*     memref x = hash_get(s->locals,key); */
+      /*     printf("val currently %i\n", x.data.i); */
+      /*   } */
+      
       hash_set(s->locals,key, val);
+        /*     if(val.type == Int32) */
+        /* { */
+        /*             memref x = hash_get(s->locals,key); */
+        /*   printf("val now %i\n", x.data.i); */
+
+        /* } */
     }
   else if(s->closure_scope.type == Scope)
     {
+      if(val.type == Int32)
+        {
+          printf("var not found, recursing through closure\n");
+        }
       replace_var(deref(&s->closure_scope),key,val);
     }
   else
@@ -761,10 +781,10 @@ int step(vm* const vm, int fiber_index)
       ra_w(str);
       VL(" with a value of %i\n", ma.data.i);
       #endif
-
+      REFRESH_EC;
       PUSH(ma);
       //   printf("stack now\n");
-      REFRESH_EC;
+      
       //      print_stack(ec);
     
       break;
@@ -792,7 +812,9 @@ int step(vm* const vm, int fiber_index)
       break;
       
     case rvar:
-      VL("rvar ");      
+      VL("rvar ");
+      print_stack(ec);
+      
       READ_STR;
 #ifdef VM_DEBUG
       ra_wl(str);
@@ -872,6 +894,7 @@ int step(vm* const vm, int fiber_index)
       mb = POP;      
       if(ma.type == Int32 && mb.type == Int32)
         {
+          printf("adding %i and %i\n", ma.data.i, mb.data.i);
           PUSH(int_to_memref( ma.data.i + mb.data.i));
         }
       // you can "add" strings
@@ -963,7 +986,16 @@ int step(vm* const vm, int fiber_index)
       DIE("\t\t!!pow Not implemented\n");
       break;
     case tostr:
-      DIE("\t\t!!tostr Not implemented\n");
+      DL("\t\ttostr\n");
+      ma = POP;
+      // only support its for now
+      assert(ma.type == Int32);
+      printf("called with %i\n", ma.data.i);
+      char buffer [33];
+      itoa(ma.data.i, buffer, 10);
+      mb = ra_init_str(buffer);
+      REFRESH_EC;
+      PUSH(mb);
       break;
     case toint:
       DIE("\t\t!!toint Not implemented\n");
@@ -1442,6 +1474,7 @@ int step(vm* const vm, int fiber_index)
       assert(!hash_contains(vm->u_locs,ma));
       mb = malloc_loc(ma);
       hash_set(vm->u_locs, ma, mb);
+      REFRESH_EC;
       PUSH(mb);
       //TODO: annnouce delta
       break;
@@ -1454,6 +1487,7 @@ int step(vm* const vm, int fiber_index)
       locrefp = deref(&mb);
       locrefp->id = vm->u_max_id++;
       //hash_set(vm->u_locrefs, mb, ma);
+      REFRESH_EC;
       PUSH(mb);
       //TODO: announce delta            
       break;
@@ -1660,8 +1694,12 @@ int step(vm* const vm, int fiber_index)
       break;
       
     case shuffle:
-      DIE("\t\t!!shuffle Not implemented\n");
+      TL("\t\tshuffle\n");
+      ma = POP;
+      assert(ma.type == Array);
+      ra_shuffle(ma);
       break;
+      
     case sort:
       DIE("\t\t!!sort Not implemented\n");
       break;
@@ -1677,6 +1715,7 @@ int step(vm* const vm, int fiber_index)
       assert(ma.type == String);
       mb = ra_init(sizeof(memref),5);
       ra_append_memref(mb,ma);
+      REFRESH_EC;
       PUSH(mb);
       break;
     case addaction:
@@ -1735,12 +1774,15 @@ int step(vm* const vm, int fiber_index)
       for(int i = 1; i < len; i+=2)
         {
           hash_set(fib->valid_responses,ra_nth_memref(mb,i),ra_nth_memref(mb,i+1));
+          //TODO: support ints here
+          md = ra_nth_memref(mb,i);
           text = "{\"id\":\"";
           ra_append_str(mc,text, strlen(text));
-          ra_append_ra_str(mc, ra_nth_memref(mb,i));
-          text = "\",\"text\":\"";
+          ra_append_ra_str(mc, md);
+          text = "\",\"text\":\"";            
           ra_append_str(mc,text, strlen(text));
           ra_append_ra_str(mc, ra_nth_memref(mb,i+1));
+          
           if(i+2 < len)
             {
               text = "\"},";
@@ -1816,6 +1858,7 @@ int step(vm* const vm, int fiber_index)
       VL("lambda\n");
       READ_INT;
       memref f = init_function(ec,i);
+      REFRESH_EC;
       PUSH(f);
       break;
       

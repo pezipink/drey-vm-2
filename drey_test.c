@@ -9,6 +9,7 @@
 #include "datastructs\refstack.h"
 #include "datastructs\refarray.h"
 #include "datastructs\reflist.h"
+#include "datastructs\json.h"
 /* #include "vm\vm.h" */
 
 static void setup(void)
@@ -277,6 +278,22 @@ MU_TEST(_stack_basic)
         stack_push(st2, int_to_memref(i));
       }
 }
+
+MU_TEST(_json_main)
+{
+  char* str = " { \"test-key\" :  [  \"hello world\" , \"test\" ], \
+                  \"key-2\" : [1, 2, 3   , 4  , 5, true, false] }";
+
+  memref o = json_to_object(&str, strlen(str) - 1);
+  print_hash(o, 0);
+
+  memref s = object_to_json(o);
+
+  ra_wl(s);
+  
+  //  ra_wl(o);
+}
+
 
 MU_TEST(_vm_a)
 {
@@ -556,6 +573,24 @@ MU_TEST_SUITE(gc_suite)
   MU_RUN_TEST(_gc_main);
 }
 
+MU_TEST_SUITE(json_suite)
+{
+  MU_SUITE_CONFIGURE(&setup,&teardown);
+
+  //  fixed_pool_init(&int_memory,sizeof(int),100);
+  fixed_pool_init(&ref_memory,sizeof(ref),1); 
+  fixed_pool_init(&hash_memory,sizeof(refhash),1024);
+  fixed_pool_init(&scope_memory,sizeof(scope),10);
+  fixed_pool_init(&stack_memory,sizeof(refstack),1);
+  fixed_pool_init(&kvp_memory,sizeof(key_value),10);
+  fixed_pool_init(&go_memory,sizeof(gameobject),10);
+  fixed_pool_init(&loc_memory,sizeof(location),10);
+  fixed_pool_init(&loc_ref_memory,sizeof(locationref),10);
+  
+  dyn_pool_init(&dyn_memory,sizeof(int) * 10);
+  MU_RUN_TEST(_json_main);
+}
+
 MU_TEST_SUITE(test_suite)
 {
   MU_SUITE_CONFIGURE(&setup,&teardown);
@@ -597,9 +632,10 @@ MU_TEST_SUITE(test_suite)
 
 int main(int argc, char *argv[])
 {
-  /* MU_RUN_SUITE(gc_suite); */
+  /* Mu_RUN_SUITE(gc_suite); */
 
-  MU_RUN_SUITE(test_suite);
+  /* MU_RUN_SUITE(test_suite); */
+  MU_RUN_SUITE(json_suite);
   /* MU_RUN_SUITE(refhash_suite); */
 
   /* gc_clean_full(); */
