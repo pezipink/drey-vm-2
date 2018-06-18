@@ -229,10 +229,9 @@ void gc_mark_n_sweep(vm* vm)
   for(int fi = 0; fi < max_fiber; fi++)
     {
       fiber* f = (fiber*)ra_nth(vm->fibers,fi);
-
-      scan_graph(f->valid_responses, gc_marker);
+      
       gc_marker(f->waiting_client);
-      gc_marker(f->waiting_data);
+      scan_graph(f->waiting_data, gc_marker);
       gc_marker(f->exec_contexts);
           
       int max_ec = ra_count(f->exec_contexts);

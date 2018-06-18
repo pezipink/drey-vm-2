@@ -2,11 +2,15 @@
 #include <windows.h>
 
 #include "../memory/manager.h"
+#include "../memory/gc.h"
 #include "../datastructs/refstack.h"
 #include "../datastructs/refhash.h"
 #include "../datastructs/refarray.h"
 #include "../datastructs/reflist.h"
+#include "../datastructs/json.h"
 #include "vm.h"
+
+
 #include<assert.h>
 #include<stdio.h>
 #include<stdlib.h>
@@ -132,7 +136,7 @@ void patch_stack_pool_pointers(vm* vm)
     }
 }
 
-exec_context init_exec_context()
+exec_context init_exec_context(int id)
 {
   exec_context ec;
   ec.eval_stack = stack_init(1);
@@ -143,19 +147,19 @@ exec_context init_exec_context()
   scope* s = deref(&scopeRef);
   ra_append_memref(scopes, scopeRef);
   ec.scopes = scopes;
+  ec.id = id;
   return ec;
 }
 
-fiber init_fiber(int id)
+fiber init_fiber(int id, int exec_context_id)
 {
   fiber f;
   f.id = id;
   f.exec_contexts = ra_init(sizeof(exec_context),1);
   f.awaiting_response = None;
-  f.waiting_client.type = 0;
-  f.waiting_data.type = 0;
-  f.valid_responses = hash_init(3);
-  exec_context ex = init_exec_context();
+  f.waiting_client.type = 0;  
+  f.waiting_data = hash_init(3);
+  exec_context ex = init_exec_context(exec_context_id);
   ra_append(f.exec_contexts,&ex);
   return f;
 }
@@ -177,22 +181,25 @@ vm init_vm(void* socket)
   
   v.gc_off = 0;
   v.cycle_count = 0;
-
+  v.u_max_id = 0;
   v.num_players = 0;
   v.req_players = 1; //todo: load this somehow
+
+  //debug
+  v.debugger_connected = 0;
+  v.exec_fiber_id = 1;
+  v.exec_context_id = 0;
   
-  fiber f = init_fiber(0);
+  fiber f = init_fiber(v.u_max_id++, v.u_max_id++);
   ra_append(v.fibers,&f);
 
-  f.valid_responses.type = 0;
   f.waiting_client.type = 0;
   f.waiting_data.type = 0;
   
   //universe
-  v.u_max_id = 0;
+ 
   v.u_objs = hash_init(3);
-  //  v.u_locrefs = hash_init(3);
-  v.u_locs = hash_init(3);
+    v.u_locs = hash_init(3);
 
   //global state object
   memref state = malloc_go(-1);  
@@ -231,11 +238,12 @@ exec_context* get_fiber_ec(vm* const vm, int index)
 }
 
 
-exec_context clone_current_exec_context(vm* vm, int fiber_index)
+exec_context clone_current_exec_context(vm* vm, int fiber_index, int new_id)
 {
   exec_context new;
   exec_context* old = get_fiber_ec(vm, fiber_index);
   new.pc = old->pc;
+  new.id = new_id;
   new.eval_stack = stack_clone(old->eval_stack);
   old = get_fiber_ec(vm, fiber_index);
   new.scopes = ra_clone(old->scopes);
@@ -280,19 +288,18 @@ void vm_handle_raw(vm* vm, char* clientid, int clientLen, char* response, int re
     }
 }
 
-void vm_handle_response(vm* vm, char* clientid, int clientLen, stringref choice)
+void vm_handle_response(vm* vm, stringref clientid, stringref choice)
 {
   if(vm->game_over)
     {
       return;
     }
-  memref id = ra_init_str_raw(clientid,clientLen);
   memref state_r = hash_get(vm->u_objs,int_to_memref(-1));
   //  memref choice = ra_init_str_raw(response,responseLen);
   gameobject* state_go = deref(&state_r);
   memref players = hash_get(state_go->props, ra_init_str("players"));
 
-  if(hash_contains(players, id))
+  if(hash_contains(players, clientid))
     {
       //todo: the specific fiber will be included in the message somehow.
       //for now we simply look for any fiber that is waiting for this client.
@@ -300,13 +307,14 @@ void vm_handle_response(vm* vm, char* clientid, int clientLen, stringref choice)
       for(int i = 0; i < count; i++)
         {
           fiber* f = ra_nth(vm->fibers, i);
-          if(f->awaiting_response == Choice && memref_equal(f->waiting_client, id))
+          if(f->awaiting_response == Choice && memref_equal(f->waiting_client, clientid))
             {              
               //check this is a valid response
-              
-              if(hash_contains(f->valid_responses, choice))
+              memref choices = hash_try_get_string_key(f->waiting_data, "choices");
+              if(hash_contains(choices, choice))
                 {
                   f->awaiting_response = false;
+                  f->waiting_data = hash_init(3);
                   if(memref_equal(choice,ra_init_str("__UNDO__")))
                     {
                       printf("falling back to previous stack\n");
@@ -315,6 +323,7 @@ void vm_handle_response(vm* vm, char* clientid, int clientLen, stringref choice)
                       ra->element_count-=2;
                       exec_context* ec = current_ec(f);
                       ec->pc--;
+                      vm->exec_context_id = ec->id;
                     }
                   else
                     {
@@ -361,7 +370,7 @@ void vm_client_connect(vm* vm, char* clientid, int len)
               zmq_msg_init_size(&msg_type,1);
               char* data = zmq_msg_data(&msg_type); 
               *data = (char)Data;
-              zmq_msg_t msg_data = ra_to_msg(f->waiting_data);
+              zmq_msg_t msg_data = ra_to_msg(object_to_json(f->waiting_data));
               zmq_msg_send(&msg_id, vm->ip_machine, ZMQ_SNDMORE);
               zmq_msg_send(&msg_type, vm->ip_machine, ZMQ_SNDMORE);
               zmq_msg_send(&msg_data, vm->ip_machine, 0);      
@@ -379,15 +388,22 @@ void vm_client_connect(vm* vm, char* clientid, int len)
         {
           memref go_r = malloc_go(vm->u_max_id++);
           gameobject* go = deref(&go_r);
+          
           hash_set(go->props,ra_init_str("clientid"),id);      
           hash_set(players, id, go_r);
-      
+          if(memref_cstr_equal(id, "__DEBUG__"))
+            {
+              printf("special debugging client detected.\n");
+              vm->debugger_connected = 1;                                                               
+            }
           printf("client ");
           ra_w(id);
           printf("is now in the game!\n");
           vm->num_players++;
           printf("waiting for %i more players.\n", vm->req_players - vm->num_players);        
-      
+
+          
+          
         }
     }
 }
@@ -674,6 +690,13 @@ int step(vm* const vm, int fiber_index)
 {
   exec_context* ec;
   REFRESH_EC;
+
+  //DEBUG
+  fiber *fib;
+  fib = get_fiber(vm, fiber_index);
+  vm->exec_fiber_id = fib->id;
+  vm->exec_context_id = ec->id;
+  
   //printf("%#08x", ec->pc);
   enum opcode o = *(char*)ra_nth(vm->program,ec->pc++);
   //  printf("  %i  ", o);
@@ -684,7 +707,7 @@ int step(vm* const vm, int fiber_index)
   gameobject *gop;
   location *locp, *locp2;
   locationref *locrefp;
-  fiber *fib;
+
   scope *scope;
 
   //print_stack(ec);
@@ -1717,7 +1740,8 @@ int step(vm* const vm, int fiber_index)
 
     case suspend:
       VL("suspend\n");
-      exec_context ec_new = clone_current_exec_context(vm, fiber_index);
+      exec_context ec_new = clone_current_exec_context(vm, fiber_index, vm->u_max_id++);
+      vm->exec_context_id = ec_new.id;
       patch_stack_pool_pointers(vm);
       fib = get_fiber(vm,fiber_index);
       ra_append(fib->exec_contexts, &ec_new);
@@ -1729,71 +1753,35 @@ int step(vm* const vm, int fiber_index)
       assert(mb.type == Array);
       int len = ra_count(mb);
       assert(len % 2 != 0);
-      mc = ra_init_raw(sizeof(char),1024,String);
-      char* text = "{ \"t\":\"request\",\"header\":\"";
-      ra_append_str(mc,text, strlen(text));
-      ra_append_ra_str(mc, ra_nth_memref(mb,0));
-      text = "\", \"choices\":[";
-      ra_append_str(mc,text, strlen(text));
-
-      fib = get_fiber(vm,fiber_index);
-      fib->valid_responses = hash_init(3);
-
+      fib->waiting_data = hash_init(2);
+      memref choices = hash_init(2);
+      hash_set(fib->waiting_data, ra_init_str("t"),ra_init_str("request"));
+      hash_set(fib->waiting_data, ra_init_str("header"),ra_nth_memref(mb,0));
+      hash_set(fib->waiting_data, ra_init_str("fiberid"),int_to_memref(fib->id));
+      
       if(ra_count(fib->exec_contexts) > 2)
         {
-          text = "{\"id\":\"__UNDO__\",\"text\":\"UNDO\"},";
-          ra_append_str(mc,text, strlen(text));
-          hash_set(fib->valid_responses,ra_init_str("__UNDO__"),ra_init_str("UNDO"));
+          hash_set(choices, ra_init_str("__UNDO__"), ra_init_str("UNDO"));
         }
       for(int i = 1; i < len; i+=2)
         {
-          hash_set(fib->valid_responses,ra_nth_memref(mb,i),ra_nth_memref(mb,i+1));
-          //TODO: support ints here
-          md = ra_nth_memref(mb,i);
-          text = "{\"id\":\"";
-          ra_append_str(mc,text, strlen(text));
-          ra_append_ra_str(mc, md);
-          text = "\",\"text\":\"";            
-          ra_append_str(mc,text, strlen(text));
-          ra_append_ra_str(mc, ra_nth_memref(mb,i+1));
-          
-          if(i+2 < len)
-            {
-              text = "\"},";
-              ra_append_str(mc,text, strlen(text));
-            }
-          else
-            {
-              text = "\"}";
-              ra_append_str(mc,text, strlen(text));
-            }
-          //careful - re-get the fiber incase the dynamic pool moved
-          fib = get_fiber(vm,fiber_index);
+          hash_set(choices,ra_nth_memref(mb,i),ra_nth_memref(mb,i+1));
         }
-
-      text = "]}";
-      ra_append_str(mc,text, strlen(text));
-
-      printf("\n");
-      text = "]}";
-      ra_append_str(mc,text, strlen(text));
-
-      printf("sending suspend message to client ");
-      //      ra_wl(mc);
-      printf("\n");
-      
+      //careful - re-get the fiber incase the dynamic pool moved
       fib = get_fiber(vm,fiber_index);
+      hash_set(fib->waiting_data, ra_init_str("choices"), choices);
+      printf("sending suspend message to client\n");
+      //ra_wl(object_to_json(fib->waiting_data));
+      
       fib->awaiting_response = Choice;
       fib->waiting_client = ma;
-      fib->waiting_data = mc;
-
-      //todo: we need to include the fiber id in the message
+      
       zmq_msg_t msg_id = ra_to_msg(ma);
       zmq_msg_t msg_type;
       zmq_msg_init_size(&msg_type,1);
       char* data = zmq_msg_data(&msg_type); 
       *data = (char)Data;
-      zmq_msg_t msg_data = ra_to_msg(mc);
+      zmq_msg_t msg_data = ra_to_msg(object_to_json(fib->waiting_data));
 
       zmq_msg_send(&msg_id, vm->ip_machine, ZMQ_SNDMORE);
       zmq_msg_send(&msg_type, vm->ip_machine, ZMQ_SNDMORE);
@@ -1925,8 +1913,7 @@ int step(vm* const vm, int fiber_index)
       fib = get_fiber(vm,fiber_index);
       fib->awaiting_response = RawData;
       fib->waiting_client = ma;
-      fib->waiting_data.type = 0;
-      fib->valid_responses = hash_init(3); //really need to implement clear()
+      fib->waiting_data = hash_init(2);      
 
       //todo: we need to include the fiber id in the message
       zmq_msg_t msg_id_raw = ra_to_msg(ma);
@@ -1956,9 +1943,9 @@ int step(vm* const vm, int fiber_index)
       assert(mb.type == Function);
 
       
-      fiber new_f = init_fiber(max_ec);
+      fiber new_f = init_fiber(vm->u_max_id++, vm->u_max_id++);
       patch_stack_pool_pointers(vm);
-      new_f.valid_responses.type = 0;
+      
       new_f.waiting_client.type = 0;
       new_f.waiting_data.type = 0;
 
@@ -2051,30 +2038,77 @@ int step(vm* const vm, int fiber_index)
 }
 
 
-void run(vm* vm)
+void vm_run(vm* vm)
 {
-  /* fiber* f = (fiber*)ra_nth(vm->fibers,0); */
-  /* exec_context* ec = (exec_context*)ra_nth(f->exec_contexts,0); */
-  /* DL("stack offset is %i\n", stack_head_offset(ec->eval_stack)); */
-  /* while(step(vm,ec) == 0) */
-  /*   { */
-  /*     vm->cycle_count++; */
-  /*     if(vm->cycle_count % 100 == 0) */
-  /*       { */
-  /*         gc_mark_n_sweep(vm); */
+  int count = ra_count(vm->fibers);          
+  for(int i = 0; i < count; i++)
+    {
+      fiber* f  = (fiber*)ra_nth(vm->fibers,i);
+      if(f->awaiting_response == None)
+        {
+          printf("executing fiber %i\n", i);
+          while(1)
+            {
+              int ret = step(vm,i);
+              vm->cycle_count++;
+              if(ret == 2)
+                {
+                  vm->game_over = true;
+                  vm->u_objs = hash_init(3);
+                  vm->fibers = ra_init(sizeof(fiber),1);
+                  break;
+                }
+              if(ret == 3) // signifies a fiber ended
+                {
+                  i--;
+                  count = ra_count(vm->fibers);          
+                  break;
+                }
+              else if(ret != 0)
+                {
+                  break;
+                }
+            }
 
-  /*       } */
-  /*   } */
-
-  /* gc_print_stats(); */
-  /* VL("freeing scope..\n"); */
-
-  /* /\* ra_dec_count(ec->scopes); *\/ */
-
-  /* gc_mark_n_sweep(vm); */
-  /* gc_print_stats(); */
- 
-
-  /* VL("run finihsed\n"); */
+        }
+    }
 }
+
+
+int vm_step_into(vm* vm)
+{
+  int count = ra_count(vm->fibers);          
+  for(int i = 0; i < count; i++)
+    {
+      fiber* f  = (fiber*)ra_nth(vm->fibers,i);
+      if(f->awaiting_response == None)
+        {
+          printf("stepping fiber %i\n", i);
+          int ret = step(vm,i);
+          vm->cycle_count++;
+          if(vm->cycle_count % 100 == 0)
+            {
+              gc_mark_n_sweep(vm);
+            }
+          if(ret == 2)
+            {
+              vm->game_over = true;
+              vm->u_objs = hash_init(3);
+              vm->fibers = ra_init(sizeof(fiber),1);
+              gc_print_stats(vm);
+              gc_mark_n_sweep(vm);
+              gc_print_stats(vm);
+            }
+          if(ret == 3) // signifies a fiber ended
+            {
+              i--;
+              count = ra_count(vm->fibers);          
+            }
+          return 1;
+        }
+      
+    }
+  return 0;
+}
+
 

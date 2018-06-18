@@ -21,6 +21,7 @@ unsigned ra_count(memref ra_ref);
 void* ra_nth(memref ra_ref, unsigned nth);
 void* ra_data(memref ra_ref);
 void ra_append(memref ra_ref, void* new_element);
+void ra_append_memref(memref ra_ref, memref new_element);
 memref ra_clone(memref);
 void ra_set(memref ra_ref, unsigned nth, void* new_element);
 int ra_nth_int(memref ra_ref, unsigned nth);

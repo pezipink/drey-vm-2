@@ -138,6 +138,7 @@ enum opcode
 
 typedef struct exec_context
 {
+  int id;
   int pc;
   memref eval_stack;
   raref scopes; //ra memrefs
@@ -160,9 +161,9 @@ typedef struct fiber
   enum response_types awaiting_response;
   // details of message sent to client
   // so it can be resent and response validated.
-  hashref valid_responses;
+  
   stringref waiting_client;
-  stringref waiting_data;
+  hashref waiting_data;
   
 } fiber;
 
@@ -188,14 +189,21 @@ typedef struct vm
 
   //zmq socket.
   void* ip_machine;
+
+  //DEBUG
+  int exec_fiber_id;
+  int exec_context_id;
+  int debugger_connected;
 } vm;
 
 vm init_vm(void* socket);
 zmq_msg_t ra_to_msg(memref ra);
 void vm_client_connect(vm* machine, char* clientid, int len);
 
-void vm_handle_response(vm* machine, char* clientid, int clientLen, memref choice);
+void vm_handle_response(vm* machine, stringref clientid, memref choice);
 void vm_handle_raw(vm* machine, char* clientid, int clientLen, char* response, int responseLen);
+
+void vm_run(vm *vm);
 
 #endif
 
