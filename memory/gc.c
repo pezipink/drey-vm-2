@@ -231,9 +231,9 @@ void gc_mark_n_sweep(vm* vm)
       fiber* f = (fiber*)ra_nth(vm->fibers,fi);
       
       gc_marker(f->waiting_client);
-      scan_graph(f->waiting_data, gc_marker);
-      gc_marker(f->exec_contexts);
-          
+      scan_graph(f->waiting_data, gc_marker);      
+      gc_marker(f->exec_contexts);               
+
       int max_ec = ra_count(f->exec_contexts);
       for(int ei = 0; ei < max_ec; ei++)
         {              
@@ -254,6 +254,10 @@ void gc_mark_n_sweep(vm* vm)
   //  scan_graph(vm->u_locrefs,gc_marker);
   scan_graph(vm->u_locs,gc_marker);
   //for now the roots are just the stack.
+
+  //debug
+  scan_graph(vm->breakpoints, gc_marker);
+  
 
   TL("GC Sweeping...\n");
   int offset = 0;

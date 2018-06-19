@@ -334,6 +334,15 @@ void ra_append_str(memref ra_ref, char* val, int len)
     }
 }
 
+void ra_append_cstr(memref ra_ref, char* val)
+{
+    int len = strlen(val);
+    for (int i = 0; i < len; i++)
+    {
+        ra_append(ra_ref, val++);
+    }
+}
+
 void ra_append_ra_str(memref ra_ref, memref ra_source_ref)
 {
   //todo: we could memcpy this if we ensure there's enough space.

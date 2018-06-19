@@ -543,6 +543,85 @@ int is_value(memref x)
   return x.type < Hash;
 }
 
+static void ref_to_string_internal(memref mr, stringref output)
+{
+    switch (mr.type)
+    {
+    case 0:
+        ra_append_cstr(output, "()");
+        break;
+    case Int32:
+        char buf[30];
+        itoa(mr.data.i, buf, 10);
+        ra_append_cstr(output, buf);
+        break;
+    case String:
+        ra_append_ra_str(output, mr);
+        break;
+    case Array:
+        ra_append_char(output, '[');
+        int max = ra_count(mr);
+        for (int i = 0; i < max; i++)
+        {
+            ref_to_string_internal(ra_nth_memref(mr, i), output);
+        }
+        ra_append_char(output, ']');
+        break;
+    case Function:
+        ra_append_char(output, 'F');
+        break;
+    case GameObject:
+        gameobject * gop = deref(&mr);
+        //print_hash(gop->props, 0);
+        ra_append_char(output, '#');
+        break;
+    case List:
+        ra_append_char(output, '{');
+        /* while (1)
+         {
+             if (mr.type == 0)
+             {
+                 break;
+             }
+             list* lst = deref(&mr);
+             if (lst->head.type != 0)
+             {
+                 print_ref(lst->head);
+             }
+             if (lst->tail.type == List)
+             {
+                 list* nxt = deref(&lst->tail);
+                 if (nxt->head.type == 0)
+                 {
+                     break;
+                 }
+
+                 printf(" :: ");
+                 mr = lst->tail;
+             }
+             else
+             {
+                 printf(" :: ");
+                 print_ref(lst->tail);
+                 break;
+             }
+         }*/
+        ra_append_char(output, '}');
+        break;
+
+
+    default:
+        printf("dbgl not implemented for type %i\n", mr.type);
+    }
+}
+
+stringref ref_to_string(memref mr)
+{
+    stringref string = ra_init_raw(sizeof(char), 1024, String);
+    ref_to_string_internal(mr, string);
+    return string;
+}
+
 void print_ref(memref mr)
 {
   switch(mr.type)

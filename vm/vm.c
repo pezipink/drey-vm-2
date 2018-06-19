@@ -183,12 +183,13 @@ vm init_vm(void* socket)
   v.cycle_count = 0;
   v.u_max_id = 0;
   v.num_players = 0;
-  v.req_players = 1; //todo: load this somehow
+  v.req_players = 2; //todo: load this somehow
 
   //debug
   v.debugger_connected = 0;
   v.exec_fiber_id = 1;
   v.exec_context_id = 0;
+  v.breakpoints = hash_init(3);
   
   fiber f = init_fiber(v.u_max_id++, v.u_max_id++);
   ra_append(v.fibers,&f);
@@ -199,7 +200,7 @@ vm init_vm(void* socket)
   //universe
  
   v.u_objs = hash_init(3);
-    v.u_locs = hash_init(3);
+  v.u_locs = hash_init(3);
 
   //global state object
   memref state = malloc_go(-1);  
@@ -699,6 +700,7 @@ int step(vm* const vm, int fiber_index)
   
   //printf("%#08x", ec->pc);
   enum opcode o = *(char*)ra_nth(vm->program,ec->pc++);
+  
   //  printf("  %i  ", o);
   int i;
   memref ma, mb, mc, md;
@@ -716,6 +718,9 @@ int step(vm* const vm, int fiber_index)
     case brk:
       //software breakpoint: todo
       VL("\t\t!!brk Not implemented\n");
+#if DEBUG
+      return 1;
+#endif
       break;
       
     case pop:
@@ -1839,11 +1844,15 @@ int step(vm* const vm, int fiber_index)
       REFRESH_EC;
       PUSH(ma);
       ec->pc = apply_f->address;
+
+      //DEBUG
+      vm->function_depth++;
       break;
       
     case ret:
       VL("ret\n");
       //      VL("scope count is %i\n", ra_count(ec->scopes));
+      vm->function_depth--;
       if(ra_count(ec->scopes) == 1)
         {
           printf("Program end.\n");
@@ -1851,6 +1860,8 @@ int step(vm* const vm, int fiber_index)
           scope = deref(&ma);
           ra_dec_count(ec->scopes);
           DL("scope count is %i\n", ra_count(ec->scopes));
+          //DEBUG
+          
           return 2;      
         }
       else
@@ -1866,6 +1877,8 @@ int step(vm* const vm, int fiber_index)
                 {
                   if(scope->is_fiber)
                     {
+                      //if this is a fiber entry point, we are done
+                      //and can end this fibe.
                       printf("returning from fiber %i\n", fiber_index);
                       ra_remove(vm->fibers, fiber_index, 1);
                       if(ra_count(vm->fibers) == 1)
@@ -1874,14 +1887,16 @@ int step(vm* const vm, int fiber_index)
                           fib = get_fiber(vm, 0);
                           fib->awaiting_response = None;
                         }
+                      //DEBUG
+                      
                       return 3;
                     }
                   else
-                    {
-                      //if this is a fiber entry point, we are done
-                      //and can end this fibe.
+                    {                      
                       VL("returning to address is %i\n", scope->return_address);
                       ec->pc = scope->return_address;
+                      //DEBUG
+                      
                     }
                   break;
                 }
@@ -1894,15 +1909,20 @@ int step(vm* const vm, int fiber_index)
       ma = POP;
 #if DEBUG
       print_ref(ma);
+      mb = ref_to_string(ma);
+      announce_debug_output(vm, mb, 0);
 #endif
       break;
       
     case dbgl:
       VL("dbgl\n");
       ma = stack_pop(ec->eval_stack);
+      
 #if DEBUG
-      print_ref(ma);
+      print_ref(ma);      
       putchar('\n');
+      mb = ref_to_string(ma);
+      announce_debug_output(vm, mb, 1);
 #endif
       break;
 
@@ -1962,6 +1982,9 @@ int step(vm* const vm, int fiber_index)
       new_ec = current_ec(&new_f);
       stack_push(new_ec->eval_stack,ma);
       ra_append(vm->fibers,&new_f);
+      
+      //DEBUG this acts as a "function" as far as stepping is concerned
+       vm->function_depth--;
       break;
 
 
@@ -2040,6 +2063,7 @@ int step(vm* const vm, int fiber_index)
 
 void vm_run(vm* vm)
 {
+  //run until fibers all stop or a breakpoint is hit
   int count = ra_count(vm->fibers);          
   for(int i = 0; i < count; i++)
     {
@@ -2047,10 +2071,29 @@ void vm_run(vm* vm)
       if(f->awaiting_response == None)
         {
           printf("executing fiber %i\n", i);
+          int first = 1;
           while(1)
             {
+              if (first == 1)
+              {
+                  first = 0;
+              }
+              else
+              {
+                  fiber* f = (fiber*)ra_nth(vm->fibers, i);
+                  exec_context *ec = current_ec(f);
+                 if(hash_contains(vm->breakpoints, int_to_memref(ec->pc + 1)))
+                 {
+                     break;
+                 }
+              }
+              
               int ret = step(vm,i);
               vm->cycle_count++;
+              if (vm->cycle_count % 1000 == 0)
+              {
+                  gc_mark_n_sweep(vm);
+              }
               if(ret == 2)
                 {
                   vm->game_over = true;
@@ -2068,6 +2111,7 @@ void vm_run(vm* vm)
                 {
                   break;
                 }
+              
             }
 
         }
@@ -2075,8 +2119,13 @@ void vm_run(vm* vm)
 }
 
 
-int vm_step_into(vm* vm)
+
+//DEBUG ONLY
+
+void vm_step_into(vm* vm)
 {
+  //step into ignores breakpoints and always steps if it can
+  //(first fiber not waiting for something)
   int count = ra_count(vm->fibers);          
   for(int i = 0; i < count; i++)
     {
@@ -2086,7 +2135,7 @@ int vm_step_into(vm* vm)
           printf("stepping fiber %i\n", i);
           int ret = step(vm,i);
           vm->cycle_count++;
-          if(vm->cycle_count % 100 == 0)
+          if(vm->cycle_count % 1000 == 0)
             {
               gc_mark_n_sweep(vm);
             }
@@ -2104,11 +2153,173 @@ int vm_step_into(vm* vm)
               i--;
               count = ra_count(vm->fibers);          
             }
-          return 1;
+          
         }
       
     }
-  return 0;
+  
+}
+
+void vm_step_over(vm* vm)
+{
+    //run until a breakpoint is hit
+    //or function depth from here is zero after stepping
+    vm->function_depth = 0;
+    int count = ra_count(vm->fibers);
+    for (int i = 0; i < count; i++)
+    {
+        fiber* f = (fiber*)ra_nth(vm->fibers, i);
+        if (f->awaiting_response == None)
+        {
+            //printf("executing fiber %i\n", i);
+            int first = 1;
+            while (1)
+            {
+                if (first == 1)
+                {
+                    first = 0;
+                }
+                else
+                {
+                    if (vm->function_depth == 0)
+                    {
+                        break;
+                    }
+                    exec_context *ec = current_ec(f);
+                    if (hash_contains(vm->breakpoints, int_to_memref(ec->pc + 1)))
+                    {
+                        break;
+                    }
+                }
+
+                int ret = step(vm, i);
+                vm->cycle_count++;
+                if (vm->cycle_count % 1000 == 0)
+                {
+                    gc_mark_n_sweep(vm);
+                }
+                if (ret == 2)
+                {
+                    vm->game_over = true;
+                    vm->u_objs = hash_init(3);
+                    vm->fibers = ra_init(sizeof(fiber), 1);
+                    gc_mark_n_sweep(vm);
+                    break;
+                }
+                if (ret == 3) // signifies a fiber ended
+                {
+                    i--;
+                    count = ra_count(vm->fibers);
+                    gc_mark_n_sweep(vm);
+                    break;
+                }
+                else if (ret != 0)
+                {
+                    break;
+                }
+
+            }
+
+        }
+    }
 }
 
 
+void vm_step_out(vm* vm)
+{
+    //run until a breakpoint is hit
+    //or function depth from here is -1 after stepping
+    vm->function_depth = 0;
+    int count = ra_count(vm->fibers);
+    for (int i = 0; i < count; i++)
+    {
+        fiber* f = (fiber*)ra_nth(vm->fibers, i);
+        if (f->awaiting_response == None)
+        {
+            //printf("executing fiber %i\n", i);
+            int first = 1;
+            while (1)
+            {
+                if (first == 1)
+                {
+                    first = 0;
+                }
+                else
+                {
+                    if (vm->function_depth == -1)
+                    {
+                        break;
+                    }
+                    exec_context *ec = current_ec(f);
+                    if (hash_contains(vm->breakpoints, int_to_memref(ec->pc + 1)))
+                    {
+                        break;
+                    }
+                }
+
+                int ret = step(vm, i);
+                vm->cycle_count++;
+                if (vm->cycle_count % 1000 == 0)
+                {
+                    gc_mark_n_sweep(vm);
+                }
+                if (ret == 2)
+                {
+                    vm->game_over = true;
+                    vm->u_objs = hash_init(3);
+                    vm->fibers = ra_init(sizeof(fiber), 1);
+                    gc_mark_n_sweep(vm);
+                    break;
+                }
+                if (ret == 3) // signifies a fiber ended
+                {
+                    i--;
+                    count = ra_count(vm->fibers);
+                    gc_mark_n_sweep(vm);
+                    break;
+                }
+                else if (ret != 0)
+                {
+                    break;
+                }
+
+            }
+
+        }
+    }
+}
+
+
+void announce_debug_output(vm *vm, raref string, int write_line)
+{
+    if (vm->debugger_connected)
+    {
+        zmq_msg_t msg_id = ra_to_msg(ra_init_str("__DEBUG__"));
+        zmq_msg_t msg_type;
+        zmq_msg_t msg_data;
+        zmq_msg_init_size(&msg_type, 1);
+        char* data = zmq_msg_data(&msg_type);
+        *data = (char)Debug;
+        memref json = hash_init(2);
+        if (write_line == 1)
+        {
+            hash_set(json, ra_init_str("type"), ra_init_str("debug-msg-line"));
+        }
+        else
+        {
+            hash_set(json, ra_init_str("type"), ra_init_str("debug-msg"));
+        }        
+        hash_set(json, ra_init_str("message"), string);
+        stringref json_str = object_to_json(json);
+        
+        msg_data = ra_to_msg(json_str);
+        zmq_msg_send(&msg_id, vm->ip_machine, ZMQ_SNDMORE);
+        zmq_msg_send(&msg_type, vm->ip_machine, ZMQ_SNDMORE);
+        zmq_msg_send(&msg_data, vm->ip_machine, 0);
+
+        zmq_msg_close(&msg_id);
+        zmq_msg_close(&msg_type);
+        zmq_msg_close(&msg_data);
+    }
+  
+}

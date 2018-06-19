@@ -5,6 +5,53 @@
 #include "..\datastructs\refarray.h"
 #include "..\memory\manager.h"
 
+
+static void collect_gos_recursive(memref goref, memref gos)
+{
+    gameobject *go = deref(&goref);
+    memref id = int_to_memref(go->id);
+    if(!hash_contains(gos, id))
+    {        
+        memref govals = hash_get_values(go->props);
+        hash_set(gos, id, goref);
+        int size = ra_count(govals);
+        for (size_t i = 0; i < size; i++)
+        {
+            //todo: support keys are as Gos can be used as keys
+            memref val = ra_nth_memref(govals, i);
+            if (val.type == GameObject)
+            {
+                collect_gos_recursive(val, gos);
+            }
+            else if (val.type == Array)
+            {
+                int size = ra_count(val);
+                for (int i = 0; i < size; i++)
+                {
+                    memref v = ra_nth_memref(val, i);
+                    if (v.type == GameObject)
+                    {
+                        collect_gos_recursive(v, gos);
+                    }
+                }
+            }
+            else if (val.type == Hash)
+            {
+                memref values = hash_get_values(val);
+                int size = ra_count(values);
+                for (int i = 0; i < size; i++)
+                {
+                    memref v = ra_nth_memref(values, i);
+                    if (v.type == GameObject)
+                    {
+                        collect_gos_recursive(v, gos);
+                    }
+                }
+                
+            }
+        }
+    }
+}
 static memref serialize_ref(memref ref, memref gos)
 {
     memref ret = hash_init(3);
@@ -36,8 +83,18 @@ static memref serialize_ref(memref ref, memref gos)
     }
     case Hash:
         hash_set(ret, ra_init_str("type"), ra_init_str("hash"));
-        //hash_set(ret, ra_init_str("value"), ref);
-        break;
+        
+        memref keys = hash_get_keys(ref);
+        int size = ra_count(keys);
+        memref values = hash_init(size);        
+        for (int i = 0; i < size; i++)
+        {
+            memref key = ra_nth_memref(keys, i);
+            memref val = hash_get(ref, key);
+            hash_set(values, key, serialize_ref(val, gos));
+        }
+        hash_set(ret, ra_init_str("values"), values);
+    break;
     case Function:
     {
         function *f = deref(&ref);
@@ -48,10 +105,9 @@ static memref serialize_ref(memref ref, memref gos)
     case GameObject:
     {
         gameobject *go = deref(&ref);
-        hash_set(ret, ra_init_str("type"), ra_init_str("go"));
+        hash_set(ret, ra_init_str("type"), ra_init_str("go*"));
         hash_set(ret, ra_init_str("id"), int_to_memref(go->id));
-        hash_set(gos, int_to_memref(go->id), ref);
-
+        collect_gos_recursive(ref, gos);
     }
     break;
 
@@ -153,6 +209,7 @@ static memref serialize_fiber(fiber *fib, memref gos)
     return ret;
 }
 
+
 memref build_general_announce(vm *vm)
 {
     memref root = hash_init(2);
@@ -166,26 +223,41 @@ memref build_general_announce(vm *vm)
         ra_append_memref(fibers, serialize_fiber(f, gos));
     }
 
+    //TODO: for debug clients, we send back fully serialized Gos in both universe
+    // and entire game state.  for non debug we only send back stuff in the universe
+
+    memref universe = hash_init(2);
+    hash_set(universe, ra_init_str("gameobjects"), serialize_ref(vm->u_objs,gos));
+
     memref go_flat = hash_get_values(gos);
-    memref go_array = ra_init(sizeof(memref), 10);
+    memref go_array = ra_init(sizeof(memref), 100);
     size = ra_count(go_flat);
+
+    stringref type_str = ra_init_str("type");
+    stringref id_str = ra_init_str("id");
+    stringref props_str = ra_init_str("props");
+    stringref go_str = ra_init_str("go");
     for (int i = 0; i < size; i++)
     {
         memref go_ref = ra_nth_memref(go_flat, i);
         gameobject* go = deref(&go_ref);
         memref keys = hash_get_keys(go->props);
         int size2 = ra_count(keys);
-        memref go_json = hash_init(3);
-        hash_set(go_json, ra_init_str("id"), int_to_memref(go->id));
-        for (int i = 0; i < size2; i++)
+        memref go_json = hash_init(2);
+        memref go_props = hash_init(3);
+        hash_set(go_json, id_str, int_to_memref(go->id));
+        hash_set(go_json, type_str, go_str);
+        hash_set(go_json, props_str, go_props);
+        for (int i2 = 0; i2 < size2; i2++)
         {
-            memref key = ra_nth_memref(keys, i);
+            memref key = ra_nth_memref(keys, i2);
             memref val = hash_get(go->props, key);
             if (key.type == String)
             {
-                hash_set(go_json, key, serialize_ref(val, gos));
+                hash_set(go_props, key, serialize_ref(val, gos));
             }
         }
+
         ra_append_memref(go_array, go_json);
 
     }
@@ -196,6 +268,7 @@ memref build_general_announce(vm *vm)
     hash_set(root, ra_init_str("type"), ra_init_str("announce"));
     hash_set(root, ra_init_str("fibers"), fibers);
     hash_set(root, ra_init_str("gameobjects"), go_array);
+    hash_set(root, ra_init_str("universe"), universe);
     hash_set(root, ra_init_str("execdetails"), last_exec_details);
     return root;
 }
@@ -208,6 +281,16 @@ int handle_debug_msg(memref json, vm *vm)
         if (memref_cstr_equal(t, "step-into"))
         {
             vm_step_into(vm);
+            return 2;
+        }
+        else if (memref_cstr_equal(t, "step-out"))
+        {
+            vm_step_out(vm);
+            return 2;
+        }
+        else if (memref_cstr_equal(t, "step-over"))
+        {
+            vm_step_over(vm);
             return 2;
         }
         else if (memref_cstr_equal(t, "run"))
@@ -228,6 +311,20 @@ int handle_debug_msg(memref json, vm *vm)
             return 2;
 
           }
+        else if (memref_cstr_equal(t, "set-breakpoint"))
+        {
+            memref id_val = hash_try_get_string_key(json, "address");
+            hash_set(vm->breakpoints, id_val, id_val);
+            printf("breakpoint set.\n");
+            return 1;
+        }
+        else if (memref_cstr_equal(t, "clear-breakpoint"))
+        {
+            memref id_val = hash_try_get_string_key(json, "address");
+            hash_remove(vm->breakpoints, id_val);
+            printf("breakpoint cleared.\n");
+            return 1;
+        }
         else if (memref_cstr_equal(t, "get-program"))
         {
             int size = ra_count(vm->program);
@@ -481,7 +578,7 @@ int handle_debug_msg(memref json, vm *vm)
             opcode = hash_init(2);
             hash_set(opcode, ra_init_str("code"), int_to_memref(55));
             hash_set(opcode, ra_init_str("extended"), int_to_memref(0));
-            hash_set(opcodes, ra_init_str("islist"), opcode);
+            hash_set(opcodes, ra_init_str("isarray"), opcode);
             opcode = hash_init(2);
             hash_set(opcode, ra_init_str("code"), int_to_memref(56));
             hash_set(opcode, ra_init_str("extended"), int_to_memref(0));

@@ -88,6 +88,11 @@ DWORD WINAPI machine_thread(LPVOID context)
                     {
                         printf("debug message received\n");
                         //print_hash(json,0);
+                        if (json.type == 0)
+                        {
+                            printf("CRITICAL WARNING, RECIVED BLANK JSON MESSAGE!\n");
+                            break;
+                        }
                         int response = handle_debug_msg(json, &machine);
                         if (response >= 1)
                         {

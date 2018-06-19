@@ -169,7 +169,7 @@ typedef struct fiber
 
 typedef struct vm
 {
-  int pc;
+  int next_pc; // instruction pointer for next pc
   int gc_off;
   int cycle_count;
   raref  program;
@@ -194,16 +194,25 @@ typedef struct vm
   int exec_fiber_id;
   int exec_context_id;
   int debugger_connected;
+  hashref breakpoints;
+  int function_depth;
 } vm;
 
 vm init_vm(void* socket);
 zmq_msg_t ra_to_msg(memref ra);
 void vm_client_connect(vm* machine, char* clientid, int len);
 
-void vm_handle_response(vm* machine, stringref clientid, memref choice);
+void vm_handle_response(vm* , stringref , memref );
 void vm_handle_raw(vm* machine, char* clientid, int clientLen, char* response, int responseLen);
+
+
 
 void vm_run(vm *vm);
 
+//DEBUG
+void vm_step_into(vm *vm);
+void vm_step_over(vm *vm); 
+void vm_step_out(vm *vm);
+void announce_debug_output(vm *vm, raref string, int write_line);
 #endif
 

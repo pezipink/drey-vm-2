@@ -127,6 +127,8 @@ unsigned memref_hash(memref ref);
 
 int is_value(memref x);
 
+stringref ref_to_string(memref s);
+
 memref nullref();
 
 #endif 

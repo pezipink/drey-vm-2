@@ -231,7 +231,17 @@ static stringref object_to_json_internal(memref obj, stringref json)
                       object_to_json_internal(kvp->key, json);
                       ra_append_char(json, ':');
                       object_to_json_internal(kvp->val, json);
-                    }              
+                    }     
+                  else if (kvp->key.type == Int32)
+                  {
+                      char buf[33];
+                      itoa(kvp->key.data.i, &buf, 10);
+                      ra_append_char(json, '"');
+                      ra_append_str(json, buf, strlen(buf));
+                      ra_append_char(json, '"');
+                      ra_append_char(json, ':');
+                      object_to_json_internal(kvp->val, json);
+                  }
                   else
                     {
                       printf("could not serialize non-string key in hash\n");
