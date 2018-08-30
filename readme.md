@@ -17,6 +17,6 @@ The virtual machine and project has (or will have) the following properties
 - [ ] Record and playback facility 
 - [ ] First class data visiblity features control what clients can see, mostly automatically
 - [ ] Only supports windows at the moment due to threading, but will support some nix later.
-- [ ] Remote debugging support
+- [x] Remote debugging support
 
 Work in progress,  a toy project and a re-write of the not-finished [drey-vm](https://github.com/pezipink/drey-vm)
